@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.routes import health
+from app.api.routes import health, reviews, webhooks
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -17,6 +17,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(title="PR Review Agent", version="0.1.0", lifespan=lifespan)
     app.include_router(health.router)
+    app.include_router(webhooks.router)
+    app.include_router(reviews.router)
     return app
 
 

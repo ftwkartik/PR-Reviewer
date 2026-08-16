@@ -53,3 +53,11 @@ markers = ["live: hits real external services (excluded from CI)"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "kombu.*", "pgvector.*", "tree_sitter_python.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "app.workers.*"
+disallow_untyped_decorators = false
