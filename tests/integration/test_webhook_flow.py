@@ -148,3 +148,42 @@ async def test_get_review_requires_api_key(client) -> None:  # type: ignore[no-u
     assert (await c.get(f"/api/v1/reviews/{rid}")).status_code == 401
     ok = await c.get(f"/api/v1/reviews/{rid}", headers={"X-API-Key": "k"})
     assert ok.status_code == 200 and ok.json()["status"] == "QUEUED"
+
+
+async def test_manual_review_api(client, sessionmaker) -> None:  # type: ignore[no-untyped-def]
+    import httpx
+    import respx
+
+    from app.api.routes.reviews import get_enqueue_fn, get_gh_factory
+    from app.github.client import GitHubClient
+
+    c, _ = client
+    app = c._transport.app  # type: ignore[attr-defined]
+    queued: list[UUID] = []
+
+    class T:
+        async def token_for(self, _: int) -> str:
+            return "t"
+
+    async def close() -> None:
+        return None
+
+    http = httpx.AsyncClient()
+    app.dependency_overrides[get_gh_factory] = lambda: (
+        lambda inst: (GitHubClient(http, T(), inst, "https://api.github.com"), close)  # type: ignore[arg-type]
+    )
+    app.dependency_overrides[get_enqueue_fn] = lambda: lambda jid: queued.append(jid) or True
+    pr = {"number": 4, "head": {"sha": "d" * 40},
+          "base": {"sha": "e" * 40, "repo": {"id": 77, "default_branch": "main", "private": False}}}  # fmt: skip
+    with respx.mock(base_url="https://api.github.com") as m:
+        m.get("/repos/acme/demo/pulls/4").respond(200, json=pr)
+        h = {"X-API-Key": "k"}
+        body = {"repository": "acme/demo", "pull_request": 4}
+        r = await c.post("/api/v1/reviews", json=body, headers=h)
+        assert r.status_code == 422  # unknown repo needs installation_id
+        r = await c.post("/api/v1/reviews", json=body | {"installation_id": 5}, headers=h)
+        assert r.status_code == 202 and r.json()["status"] == "queued" and len(queued) == 1
+        again = await c.post("/api/v1/reviews", json=body, headers=h)
+        assert again.json()["existing"] is True and len(queued) == 1
+        assert (await c.post("/api/v1/reviews", json=body)).status_code == 401
+    await http.aclose()

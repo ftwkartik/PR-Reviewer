@@ -28,7 +28,9 @@ async def _run(job_id: uuid.UUID) -> str:
             lock_key = f"review:{job.repository_id}:{job.pull_number}"
         try:
             async with redis_lock(redis, lock_key, ttl_s=1800):
-                status = await ReviewOrchestrator(sessionmaker, default_stages()).run(job_id)
+                status = await ReviewOrchestrator(sessionmaker, default_stages(get_settings())).run(
+                    job_id
+                )
         except LockNotAcquiredError as exc:
             raise TransientError("another review of this PR is running", retry_after=30) from exc
         return status.value

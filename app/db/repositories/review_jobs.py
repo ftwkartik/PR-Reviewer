@@ -147,3 +147,26 @@ async def stale_queued_jobs(session: AsyncSession, older_than: timedelta) -> lis
         )
     )
     return list(rows.scalars())
+
+
+async def find_live_job(
+    session: AsyncSession, repository_id: uuid.UUID, pull_number: int, head_sha: str
+) -> ReviewJob | None:
+    return (
+        await session.execute(
+            select(ReviewJob).where(
+                ReviewJob.repository_id == repository_id,
+                ReviewJob.pull_number == pull_number,
+                ReviewJob.head_sha == head_sha,
+                ReviewJob.status.notin_(["FAILED", "CANCELLED", "STALE"]),
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def find_repository(session: AsyncSession, owner: str, name: str) -> Repository | None:
+    return (
+        await session.execute(
+            select(Repository).where(Repository.owner == owner, Repository.name == name)
+        )
+    ).scalar_one_or_none()

@@ -59,7 +59,7 @@ async def github_webhook(
     try:
         event = PullRequestEvent.model_validate_json(body)
     except ValidationError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "malformed payload") from exc
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "malformed payload") from exc
 
     is_new = await jobs.record_delivery(
         session, delivery_id=x_github_delivery, event=x_github_event,

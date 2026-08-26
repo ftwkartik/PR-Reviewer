@@ -6,6 +6,7 @@ stages (fetch, index, retrieve, analyze, validate, publish) live in their own mo
 """
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -22,7 +23,10 @@ from app.core.errors import (
 from app.core.logging import bind_review_context
 from app.db.models import ReviewJob
 from app.db.repositories import review_jobs as jobs
+from app.domain.pr import PullRequestContext
 from app.domain.states import TERMINAL, ReviewStatus
+from app.github.client import GitHubClient
+from app.review.triage import TriageResult
 
 log = structlog.get_logger()
 
@@ -34,7 +38,21 @@ class ReviewContext:
     job_id: uuid.UUID
     session: AsyncSession
     job: ReviewJob
+    gh: GitHubClient | None = None
+    pr: PullRequestContext | None = None
+    triage: TriageResult | None = None
     data: dict[str, Any] = field(default_factory=dict)
+    cleanups: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+
+    def require_gh(self) -> GitHubClient:
+        if self.gh is None:
+            raise RuntimeError("GitHub client not initialised (fetch stage must run first)")
+        return self.gh
+
+    def require_pr(self) -> PullRequestContext:
+        if self.pr is None:
+            raise RuntimeError("PR context not loaded (fetch stage must run first)")
+        return self.pr
 
 
 class Stage(Protocol):
@@ -78,6 +96,9 @@ class ReviewOrchestrator:
                 log.exception("review_unexpected_error")
                 await self._finish(ctx, ReviewStatus.FAILED, exc)
                 return ReviewStatus.FAILED
+            finally:
+                for cleanup in ctx.cleanups:
+                    await cleanup()
 
     async def _run_stages(self, ctx: ReviewContext) -> ReviewStatus:
         current = ReviewStatus(ctx.job.status)
