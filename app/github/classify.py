@@ -54,6 +54,11 @@ GENERATED_MARKERS = (
 
 
 def detect_language(path: str) -> str | None:
+    name = PurePosixPath(path).name
+    if name == "Dockerfile":
+        return "dockerfile"
+    if name == "Makefile":
+        return "make"
     return LANGUAGES.get(PurePosixPath(path).suffix.lower())
 
 
