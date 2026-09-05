@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr = SecretStr("")
     openai_api_key: SecretStr = SecretStr("")
 
-    embedding_provider: Literal["voyage", "openai", "local", "hash"] = "hash"
+    embedding_provider: Literal["voyage", "openai", "hash"] = "hash"
     embedding_model: str = ""
     embedding_dim: int = 1024
     voyage_api_key: SecretStr = SecretStr("")
