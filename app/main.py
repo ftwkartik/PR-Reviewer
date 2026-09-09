@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.routes import health, reviews, webhooks
+from app.api.routes import health, repositories, reviews, webhooks
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -19,6 +19,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(webhooks.router)
     app.include_router(reviews.router)
+    app.include_router(repositories.router)
     return app
 
 

@@ -3,8 +3,10 @@
 from app.core.config import Settings
 from app.domain.states import ReviewStatus
 from app.github.factory import make_github_client_factory
+from app.retrieval.embeddings import make_embedder
 from app.review.orchestrator import ReviewContext, Stage
 from app.review.stages.fetch import FetchPRStage
+from app.review.stages.index import IndexStage
 
 
 class NoopStage:
@@ -22,12 +24,18 @@ def default_stages(settings: Settings | None = None) -> list[Stage]:
         if settings is not None
         else NoopStage(ReviewStatus.FETCHING_PR)
     )
+    index: Stage = (
+        IndexStage(settings, make_embedder(settings))
+        if settings is not None
+        else NoopStage(ReviewStatus.INDEXING)
+    )
     return [
         fetch,
+        index,
         *[
             NoopStage(s)
             for s in (
-                ReviewStatus.INDEXING, ReviewStatus.RETRIEVING_CONTEXT,
+                ReviewStatus.RETRIEVING_CONTEXT,
                 ReviewStatus.ANALYZING, ReviewStatus.VALIDATING, ReviewStatus.PUBLISHING,
             )
         ],

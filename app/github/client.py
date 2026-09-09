@@ -89,6 +89,11 @@ class GitHubClient:
             page += 1
         return files
 
+    async def get_commit_sha(self, owner: str, repo: str, ref: str) -> str:
+        resp = await self._request("GET", f"/repos/{owner}/{repo}/commits/{ref}")
+        resp.raise_for_status()
+        return str(resp.json()["sha"])
+
     async def compare(self, owner: str, repo: str, base: str, head: str) -> dict[str, Any]:
         resp = await self._request("GET", f"/repos/{owner}/{repo}/compare/{base}...{head}",
                                    params={"per_page": 100})  # fmt: skip
