@@ -136,8 +136,8 @@ class CodeChunk(Base):
     fts: Mapped[str | None] = mapped_column(
         TSVECTOR,
         Computed(
-            "to_tsvector('simple', coalesce(qualified_name,'') || ' ' || "
-            "coalesce(signature,'') || ' ' || content)",
+            "to_tsvector('simple', translate(coalesce(qualified_name,'') || ' ' || "
+            "coalesce(signature,'') || ' ' || content, '.', ' '))",
             persisted=True,
         ),
     )

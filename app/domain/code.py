@@ -1,5 +1,6 @@
 import hashlib
 from dataclasses import dataclass, field
+from typing import Literal
 
 from app.retrieval.tokens import estimate_tokens
 
@@ -25,6 +26,8 @@ class CodeChunk:
     is_test: bool = False
     blob_sha: str = ""
     docstring: str | None = None
+    chunk_id: str = ""  # DB id for base chunks; synthetic for head overlay chunks
+    origin: Literal["base", "head"] = "base"
 
     @property
     def content_hash(self) -> str:
