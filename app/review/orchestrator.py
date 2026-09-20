@@ -23,9 +23,11 @@ from app.core.errors import (
 from app.core.logging import bind_review_context
 from app.db.models import ReviewJob
 from app.db.repositories import review_jobs as jobs
+from app.domain.code import CodeChunk
 from app.domain.pr import PullRequestContext
 from app.domain.states import TERMINAL, ReviewStatus
 from app.github.client import GitHubClient
+from app.review.batching import ReviewBatch
 from app.review.triage import TriageResult
 
 log = structlog.get_logger()
@@ -41,6 +43,8 @@ class ReviewContext:
     gh: GitHubClient | None = None
     pr: PullRequestContext | None = None
     triage: TriageResult | None = None
+    batches: list[ReviewBatch] = field(default_factory=list)
+    overlay: dict[str, list[CodeChunk]] = field(default_factory=dict)
     data: dict[str, Any] = field(default_factory=dict)
     cleanups: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
 

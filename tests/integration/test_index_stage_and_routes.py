@@ -1,8 +1,6 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
-import fakeredis
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -22,16 +20,6 @@ from app.review.stages.index import IndexStage
 
 from .test_indexing import BASE, FakeGH, count
 from .test_orchestrator import make_job
-
-
-@pytest.fixture
-def fake_redis(monkeypatch: pytest.MonkeyPatch) -> None:
-    server = fakeredis.FakeServer()
-
-    def from_url(*_: Any, **__: Any) -> fakeredis.FakeAsyncRedis:
-        return fakeredis.FakeAsyncRedis(server=server)
-
-    monkeypatch.setattr("app.review.stages.index.Redis.from_url", from_url)
 
 
 class FetchStub:

@@ -7,6 +7,7 @@ from app.retrieval.embeddings import make_embedder
 from app.review.orchestrator import ReviewContext, Stage
 from app.review.stages.fetch import FetchPRStage
 from app.review.stages.index import IndexStage
+from app.review.stages.retrieve import RetrieveStage
 
 
 class NoopStage:
@@ -29,13 +30,18 @@ def default_stages(settings: Settings | None = None) -> list[Stage]:
         if settings is not None
         else NoopStage(ReviewStatus.INDEXING)
     )
+    retrieve: Stage = (
+        RetrieveStage(settings, make_embedder(settings))
+        if settings is not None
+        else NoopStage(ReviewStatus.RETRIEVING_CONTEXT)
+    )
     return [
         fetch,
         index,
+        retrieve,
         *[
             NoopStage(s)
             for s in (
-                ReviewStatus.RETRIEVING_CONTEXT,
                 ReviewStatus.ANALYZING, ReviewStatus.VALIDATING, ReviewStatus.PUBLISHING,
             )
         ],

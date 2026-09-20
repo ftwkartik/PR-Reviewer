@@ -1,6 +1,8 @@
 import os
 from collections.abc import AsyncIterator
+from typing import Any
 
+import fakeredis
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
@@ -39,3 +41,13 @@ async def engine() -> AsyncIterator[AsyncEngine]:
 @pytest.fixture
 def sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(engine, expire_on_commit=False)
+
+
+@pytest.fixture
+def fake_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = fakeredis.FakeServer()
+
+    def from_url(*_: Any, **__: Any) -> fakeredis.FakeAsyncRedis:
+        return fakeredis.FakeAsyncRedis(server=server)
+
+    monkeypatch.setattr("app.review.stages.index.Redis.from_url", from_url)
