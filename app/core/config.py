@@ -23,7 +23,8 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_timeout_s: float = 120.0
     llm_max_retries: int = Field(4, ge=0, le=10)
-    llm_max_output_tokens: int = 4096
+    llm_max_output_tokens: int = 8000
+    llm_effort: str = ""  # optional: low|medium|high|xhigh|max (omit for model default)
     anthropic_api_key: SecretStr = SecretStr("")
     openai_api_key: SecretStr = SecretStr("")
 
