@@ -108,10 +108,10 @@ class ReviewOrchestrator:
         current = ReviewStatus(ctx.job.status)
         for stage in self._stages:
             await self._raise_if_cancelled(ctx)
-            if current != stage.status:
-                # Resuming after a retry: skip stages at or before the persisted status.
-                if current != ReviewStatus.QUEUED and _order(stage.status) <= _order(current):
-                    continue
+            # Stages always run: their in-memory products (PR context, batches, findings) are not
+            # persisted, so a retried task must rebuild them. Expensive steps are cached
+            # (index snapshots, embeddings). Only the *transition* is skipped when resuming.
+            if current == ReviewStatus.QUEUED or _order(stage.status) > _order(current):
                 await jobs.transition(ctx.session, ctx.job, stage.status)
                 current = stage.status
             override = await stage.run(ctx)
