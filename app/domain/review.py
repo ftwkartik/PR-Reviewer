@@ -1,5 +1,6 @@
 """Review domain: the LLM-facing schema (strict) and the application-side finding record."""
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -114,6 +115,7 @@ class ProcessedFinding:
     replacement_code: str | None = None  # None if the suggestion failed validation
     notes: list[str] = field(default_factory=list)
     original: dict[str, object] = field(default_factory=dict)  # model output before validation
+    row_id: uuid.UUID | None = None  # review_findings row, set when persisted
 
     def __post_init__(self) -> None:
         self.original = self.finding.model_dump()

@@ -72,6 +72,7 @@ async def create_job(
     base_sha: str | None,
     trigger: str,
     delivery_id: str | None = None,
+    dry_run: bool = False,
 ) -> ReviewJob | None:
     """Create a QUEUED job; None if a live job already exists for this head SHA.
 
@@ -89,6 +90,7 @@ async def create_job(
             trigger=trigger,
             delivery_id=delivery_id,
             status=ReviewStatus.QUEUED.value,
+            dry_run=dry_run,
         )  # fmt: skip
         .on_conflict_do_nothing()
         .returning(ReviewJob)

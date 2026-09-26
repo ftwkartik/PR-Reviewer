@@ -1,6 +1,7 @@
 """VALIDATING stage: validate -> dedupe -> cap -> PR-level synthesis -> persist everything."""
 
 import json
+import uuid
 from typing import Any
 
 import structlog
@@ -62,6 +63,11 @@ class ValidateStage:
             processed=processed, accepted=accepted, summary=summary, cross_file=cross_file,
             overall_risk=overall_risk(accepted),
         )  # fmt: skip
+        ctx.job.scope = {
+            **ctx.job.scope, "summary": summary, "cross_file": cross_file,
+            "overall_risk": overall_risk(accepted),
+            "below_threshold": sum(p.status == "below_threshold" for p in processed),
+        }  # fmt: skip
         await self._persist(ctx, processed)
         by_status: dict[str, int] = {}
         for p in processed:
@@ -104,13 +110,21 @@ class ValidateStage:
     async def _persist(self, ctx: ReviewContext, processed: list[ProcessedFinding]) -> None:
         for p in processed:
             f = p.finding
+            bundle = ctx.batch_bundle(p.batch_index)
+            known = bundle.by_id() if bundle else {}
+            labels = [
+                f"{known[r].chunk.path}:{known[r].chunk.start_line}-{known[r].chunk.end_line}"
+                for r in f.context_refs if r in known
+            ]  # fmt: skip
+            p.row_id = uuid.uuid4()
             ctx.session.add(FindingRow(
-                review_job_id=ctx.job.id, path=f.path, line_start=f.line_start, line_end=f.line_end,
+                id=p.row_id, review_job_id=ctx.job.id, path=f.path,
+                line_start=f.line_start, line_end=f.line_end,
                 side=f.side, severity=f.severity, category=f.category, title=f.title,
                 explanation=f.explanation, evidence_quote=f.evidence_quote[:4000],
                 suggested_fix=f.suggested_fix, replacement_code=p.replacement_code,
                 confidence=p.confidence, fingerprint=p.fingerprint or "", status=p.status,
-                reject_reason=p.reject_reason, pass_name=p.pass_name, context_refs=f.context_refs,
+                reject_reason=p.reject_reason, pass_name=p.pass_name, context_refs=labels,
                 raw={"original": p.original, "notes": p.notes, "batch": p.batch_index},
             ))  # fmt: skip
         await ctx.session.commit()

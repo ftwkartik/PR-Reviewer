@@ -69,6 +69,7 @@ class ReviewJob(Base):
     error_code: Mapped[str | None] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(Text)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     attempt: Mapped[int] = mapped_column(Integer, default=0)
     scope: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     usage: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)

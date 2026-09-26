@@ -25,6 +25,7 @@ from app.db.models import ReviewJob
 from app.db.repositories import review_jobs as jobs
 from app.domain.code import CodeChunk
 from app.domain.pr import PullRequestContext
+from app.domain.retrieval import ContextBundle
 from app.domain.states import TERMINAL, ReviewStatus
 from app.github.client import GitHubClient
 from app.review.batching import ReviewBatch
@@ -47,6 +48,9 @@ class ReviewContext:
     overlay: dict[str, list[CodeChunk]] = field(default_factory=dict)
     data: dict[str, Any] = field(default_factory=dict)
     cleanups: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+
+    def batch_bundle(self, batch_index: int) -> ContextBundle | None:
+        return next((b.bundle for b in self.batches if b.index == batch_index), None)
 
     def require_gh(self) -> GitHubClient:
         if self.gh is None:

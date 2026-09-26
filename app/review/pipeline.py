@@ -14,6 +14,7 @@ from app.review.orchestrator import ReviewContext, Stage
 from app.review.stages.analyze import AnalyzeStage
 from app.review.stages.fetch import FetchPRStage
 from app.review.stages.index import IndexStage
+from app.review.stages.publish import PublishStage
 from app.review.stages.retrieve import RetrieveStage
 from app.review.stages.validate import ValidateStage
 
@@ -45,5 +46,5 @@ def default_stages(
         RetrieveStage(settings, embedder),
         AnalyzeStage(settings, llm),
         ValidateStage(settings, llm),
-        NoopStage(ReviewStatus.PUBLISHING),  # replaced by PublishStage in the publishing milestone
+        PublishStage(),
     ]
