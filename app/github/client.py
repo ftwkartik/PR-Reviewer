@@ -144,6 +144,27 @@ class GitHubClient:
             "POST", f"/repos/{owner}/{repo}/pulls/{number}/reviews", json=payload
         )
 
+    async def create_review_comment(
+        self, owner: str, repo: str, number: int, payload: dict[str, Any]
+    ) -> httpx.Response:
+        """Post one standalone inline comment (used when a batched review is rejected)."""
+        return await self._request(
+            "POST", f"/repos/{owner}/{repo}/pulls/{number}/comments", json=payload
+        )
+
+    async def list_reviews(self, owner: str, repo: str, number: int) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            resp = await self._request("GET", f"/repos/{owner}/{repo}/pulls/{number}/reviews",
+                                       params={"per_page": 100, "page": page})  # fmt: skip
+            resp.raise_for_status()
+            batch = resp.json()
+            out.extend(batch)
+            if len(batch) < 100:
+                return out
+            page += 1
+
     async def list_review_comments(
         self, owner: str, repo: str, number: int
     ) -> list[dict[str, Any]]:
