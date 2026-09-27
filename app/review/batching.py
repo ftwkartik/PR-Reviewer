@@ -19,6 +19,7 @@ class ReviewBatch:
     diff_tokens: int
     bundle: ContextBundle | None = None
     summary_hint: list[str] = field(default_factory=list)
+    static_signals: str = ""
 
     @property
     def paths(self) -> list[str]:

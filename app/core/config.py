@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     max_context_tokens: int = Field(24_000, gt=0)
     max_model_calls: int = Field(12, gt=0)
     max_webhook_body_bytes: int = 5_000_000
+    static_analyzers: str = "ruff,bandit,semgrep"  # comma list; '' disables
+    analyzer_timeout_s: float = 30.0
 
 
 @lru_cache

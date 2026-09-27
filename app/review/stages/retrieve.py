@@ -2,6 +2,8 @@
 
 import structlog
 
+from app.analyzers.base import run_analyzers
+from app.analyzers.service import build_analyzers, render_signals
 from app.core.config import Settings
 from app.db.models import Repository
 from app.domain.states import ReviewStatus
@@ -9,7 +11,7 @@ from app.retrieval.context_builder import ContextBuilder, ContextRequest
 from app.retrieval.embeddings import EmbeddingProvider
 from app.retrieval.overlay import build_overlay
 from app.retrieval.store import ChunkStore
-from app.review.batching import context_budget, make_batches
+from app.review.batching import ReviewBatch, context_budget, make_batches
 from app.review.orchestrator import ReviewContext
 
 log = structlog.get_logger()
@@ -31,8 +33,13 @@ class RetrieveStage:
 
         # Overlay covers every selected file so cross-file dependencies inside the PR resolve
         # to the head version even when the files land in different batches.
+        head_text: dict[str, str] = {}
+
         async def fetch_head(path: str) -> bytes | None:
-            return await gh.get_file_content(repo.owner, repo.name, path, pr.head_sha)
+            data = await gh.get_file_content(repo.owner, repo.name, path, pr.head_sha)
+            if data is not None and b"\x00" not in data[:8192]:
+                head_text[path] = data.decode("utf-8", errors="replace")
+            return data
 
         overlay = await build_overlay(triage.selected, fetch_head)
         changed_paths = {f.path for f in pr.files} | {
@@ -45,6 +52,8 @@ class RetrieveStage:
         for path, reason in skipped:
             triage.skipped.append((path, reason))
             triage.degraded = True
+
+        await self._attach_static_signals(batches, head_text)
 
         store = (
             ChunkStore(ctx.session, repo.id, job.snapshot_id, self._embedder.model)
@@ -75,3 +84,19 @@ class RetrieveStage:
             "context_ready", batches=len(batches), skipped=len(skipped), indexed=store is not None
         )
         return None
+
+    async def _attach_static_signals(
+        self, batches: list[ReviewBatch], head_text: dict[str, str]
+    ) -> None:
+        analyzers = build_analyzers(self._settings.static_analyzers)
+        if not analyzers or not batches:
+            return
+        files = {f.path: f for b in batches for f in b.files}
+        commentable = {p: f.right_lines() for p, f in files.items()}
+        findings = await run_analyzers(
+            analyzers, {p: head_text[p] for p in files if p in head_text}, commentable,
+            self._settings.analyzer_timeout_s,
+        )  # fmt: skip
+        for b in batches:
+            b.static_signals = render_signals(findings, {f.path for f in b.files})
+        log.info("static_signals", findings=len(findings), analyzers=[a.name for a in analyzers])

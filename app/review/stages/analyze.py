@@ -43,7 +43,13 @@ class AnalyzeStage:
                     f"This is a large pull request; you are reviewing batch {batch.index + 1} of "
                     f"{len(ctx.batches)}. Other files are reviewed separately."
                 )
-            prompt = build_review_prompt(pr, batch.files, batch.bundle, scope_note=scope_note)
+            prompt = build_review_prompt(
+                pr,
+                batch.files,
+                batch.bundle,
+                static_signals=batch.static_signals,
+                scope_note=scope_note,
+            )
             async with sem:
                 try:
                     res = await self._provider.generate(
