@@ -1,0 +1,17 @@
+id: clean_refactor
+kind: clean
+title: Extract page-size clamp
+body: Pure refactor, no behaviour change.
+edits:
+  app/services/items.py:
+    - old: |
+        def list_items(db, limit: int = 20, offset: int = 0) -> list[Item]:
+            limit = max(1, min(limit, MAX_PAGE_SIZE))
+      new: |
+        def clamp_limit(limit: int) -> int:
+            return max(1, min(limit, MAX_PAGE_SIZE))
+
+
+        def list_items(db, limit: int = 20, offset: int = 0) -> list[Item]:
+            limit = clamp_limit(limit)
+expected: []

@@ -1,0 +1,26 @@
+id: swallowed_exception
+kind: seeded
+title: Add safe_transfer for background jobs
+body: Background jobs should not crash on a failed transfer, so wrap transfer in a safe helper.
+edits:
+  app/services/payments.py:
+    - old: |
+        class InsufficientFunds(Exception):
+            pass
+      new: |
+        class InsufficientFunds(Exception):
+            pass
+
+
+        def safe_transfer(db, from_id: int, to_id: int, amount_cents: int) -> bool:
+            try:
+                transfer(db, from_id, to_id, amount_cents)
+            except Exception:
+                pass
+            return True
+expected:
+  - file: app/services/payments.py
+    contains: "except Exception:"
+    categories: [correctness]
+    min_severity: medium
+    required_context: [transfer]

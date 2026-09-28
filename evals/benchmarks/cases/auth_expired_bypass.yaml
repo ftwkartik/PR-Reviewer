@@ -1,0 +1,24 @@
+id: auth_expired_bypass
+kind: seeded
+title: Simplify verify_token
+body: Removes a redundant clock call from verify_token to make it cheaper.
+edits:
+  app/auth/session.py:
+    - old: |
+        from datetime import datetime, timezone
+
+        from app.auth.tokens import decode_token
+      new: |
+        from app.auth.tokens import decode_token
+    - old: |
+        if session.is_expired(datetime.now(timezone.utc)):
+                    return None
+                return session
+      new: |
+        return session
+expected:
+  - file: app/auth/session.py
+    contains: "return session"
+    categories: [security, correctness]
+    min_severity: high
+    required_context: [Session.is_expired, test_expired_session_is_rejected]

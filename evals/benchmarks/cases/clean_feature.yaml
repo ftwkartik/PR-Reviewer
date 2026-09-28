@@ -1,0 +1,43 @@
+id: clean_feature
+kind: clean
+title: Add item count endpoint
+body: Adds GET /items/count with a parameter-free query and a test.
+edits:
+  app/services/items.py:
+    - old: |
+        def items_with_owner_email(db, limit: int = 20) -> list[dict]:
+      new: |
+        def count_items(db) -> int:
+            return db.query("SELECT COUNT(*) FROM items")[0][0]
+
+
+        def items_with_owner_email(db, limit: int = 20) -> list[dict]:
+  app/api/items.py:
+    - old: |
+        from app.services.items import items_with_owner_email, list_items
+      new: |
+        from app.services.items import count_items, items_with_owner_email, list_items
+    - old: |
+        @router.get("/items/with-owner")
+      new: |
+        @router.get("/items/count")
+        def get_item_count():
+            return {"count": count_items(DB)}
+
+
+        @router.get("/items/with-owner")
+add_files:
+  tests/test_item_count.py: |
+    import app.api.items as items_module
+    from app.api.items import get_item_count
+
+
+    class FakeDB:
+        def query(self, sql, params=()):
+            return [(3,)]
+
+
+    def test_item_count():
+        items_module.DB = FakeDB()
+        assert get_item_count() == {"count": 3}
+expected: []

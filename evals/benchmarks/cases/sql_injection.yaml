@@ -1,0 +1,21 @@
+id: sql_injection
+kind: seeded
+title: Add item search
+body: Adds a search endpoint over item names.
+edits:
+  app/services/items.py:
+    - old: |
+        def get_owner(db, item: Item) -> User:
+      new: |
+        def search_items(db, term: str) -> list[Item]:
+            rows = db.query(f"SELECT id, owner_id, name, price_cents FROM items WHERE name LIKE '%{term}%'")
+            return [Item(*r) for r in rows]
+
+
+        def get_owner(db, item: Item) -> User:
+expected:
+  - file: app/services/items.py
+    contains: 'f"SELECT id, owner_id'
+    categories: [security]
+    min_severity: high
+    required_context: [list_items]

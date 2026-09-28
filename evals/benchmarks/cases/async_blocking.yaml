@@ -1,0 +1,31 @@
+id: async_blocking
+kind: seeded
+title: Proxy remote stats
+body: Adds an endpoint that returns stats from the internal stats service.
+edits:
+  app/api/stats.py:
+    - old: |
+        import asyncio
+
+        from fastapi import APIRouter
+      new: |
+        import asyncio
+
+        import requests
+        from fastapi import APIRouter
+    - old: |
+        @router.post("/stats/{name}")
+      new: |
+        @router.get("/stats/remote/{name}")
+        async def remote_stats(name: str):
+            resp = requests.get(f"https://stats.internal/{name}", timeout=5)
+            return resp.json()
+
+
+        @router.post("/stats/{name}")
+expected:
+  - file: app/api/stats.py
+    contains: "requests.get("
+    categories: [concurrency, performance, security]
+    min_severity: medium
+    required_context: []

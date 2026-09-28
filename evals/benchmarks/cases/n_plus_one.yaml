@@ -1,0 +1,26 @@
+id: n_plus_one
+kind: seeded
+title: Show owner email in item listing
+body: The with-owner endpoint now resolves each owner through get_owner.
+edits:
+  app/api/items.py:
+    - old: |
+        from app.services.items import items_with_owner_email, list_items
+      new: |
+        from app.services.items import get_owner, list_items
+    - old: |
+        def get_items_with_owner(limit: int = 20):
+            return items_with_owner_email(DB, limit)
+      new: |
+        def get_items_with_owner(limit: int = 20):
+            result = []
+            for item in list_items(DB, limit):
+                owner = get_owner(DB, item)
+                result.append({"id": item.id, "name": item.name, "owner_email": owner.email})
+            return result
+expected:
+  - file: app/api/items.py
+    contains: "owner = get_owner(DB, item)"
+    categories: [database, performance]
+    min_severity: medium
+    required_context: [items_with_owner_email, get_owner]

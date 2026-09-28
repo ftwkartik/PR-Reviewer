@@ -1,0 +1,14 @@
+id: decoy_safe_subprocess
+kind: decoy
+title: Add nightly backup helper
+body: Runs pg_dump with a fixed argument list and a timeout.
+add_files:
+  app/jobs/backup.py: |
+    import subprocess
+
+    BACKUP_CMD = ["pg_dump", "--format=custom", "--file"]
+
+
+    def run_backup(dest: str) -> None:
+        subprocess.run([*BACKUP_CMD, dest], check=True, timeout=300)
+expected: []

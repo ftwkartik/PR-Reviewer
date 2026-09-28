@@ -1,0 +1,16 @@
+id: breaking_api_change
+kind: seeded
+title: Use camelCase in item listing
+body: Makes the listing response consistent with our frontend naming.
+edits:
+  app/api/items.py:
+    - old: |
+        return [{"id": i.id, "name": i.name, "owner_id": i.owner_id, "price_cents": i.price_cents} for i in items]
+      new: |
+        return [{"id": i.id, "name": i.name, "ownerId": i.owner_id, "priceCents": i.price_cents} for i in items]
+expected:
+  - file: app/api/items.py
+    contains: '"ownerId"'
+    categories: [api, compatibility]
+    min_severity: medium
+    required_context: [test_items_response_shape, Contributing]

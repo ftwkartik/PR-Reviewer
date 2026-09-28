@@ -1,0 +1,27 @@
+id: missing_transaction
+kind: seeded
+title: Commit transfer steps eagerly
+body: Commits each statement as soon as it runs so locks are released sooner.
+edits:
+  app/services/payments.py:
+    - old: |
+        with transaction(db):
+                balance = db.query("SELECT balance FROM accounts WHERE id = ?", (from_id,))[0][0]
+                if balance < amount_cents:
+                    raise InsufficientFunds(from_id)
+                db.execute("UPDATE accounts SET balance = balance - ? WHERE id = ?", (amount_cents, from_id))
+                db.execute("UPDATE accounts SET balance = balance + ? WHERE id = ?", (amount_cents, to_id))
+      new: |
+        balance = db.query("SELECT balance FROM accounts WHERE id = ?", (from_id,))[0][0]
+            if balance < amount_cents:
+                raise InsufficientFunds(from_id)
+            db.execute("UPDATE accounts SET balance = balance - ? WHERE id = ?", (amount_cents, from_id))
+            db.commit()
+            db.execute("UPDATE accounts SET balance = balance + ? WHERE id = ?", (amount_cents, to_id))
+            db.commit()
+expected:
+  - file: app/services/payments.py
+    contains: "SET balance = balance + ?"
+    categories: [database, correctness]
+    min_severity: high
+    required_context: [transaction, Contributing]

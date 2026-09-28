@@ -1,0 +1,18 @@
+id: decoy_moved_check
+kind: decoy
+title: Move expiry check into a helper
+body: Pure refactor. The expiry check now lives in a helper; behaviour is identical.
+edits:
+  app/auth/session.py:
+    - old: |
+        if session is None:
+                    return None
+                if session.is_expired(datetime.now(timezone.utc)):
+                    return None
+                return session
+      new: |
+        return session if self._is_valid(session) else None
+
+            def _is_valid(self, session: Session | None) -> bool:
+                return session is not None and not session.is_expired(datetime.now(timezone.utc))
+expected: []

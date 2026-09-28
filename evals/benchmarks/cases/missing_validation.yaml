@@ -1,0 +1,17 @@
+id: missing_validation
+kind: seeded
+title: Let clients choose any page size
+body: Removes the page-size clamp so exports can fetch everything in one request.
+edits:
+  app/services/items.py:
+    - old: |
+        limit = max(1, min(limit, MAX_PAGE_SIZE))
+            rows
+      new: |
+        rows
+expected:
+  - file: app/services/items.py
+    contains: "rows = db.query"
+    categories: [api, performance, correctness]
+    min_severity: medium
+    required_context: [get_items]

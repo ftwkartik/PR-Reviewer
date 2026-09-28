@@ -1,0 +1,17 @@
+id: resource_leak
+kind: seeded
+title: Add CSV export job
+body: Adds a helper that writes report rows to a CSV file.
+add_files:
+  app/jobs/export.py: |
+    def export_report(path, rows):
+        f = open(path, "w")
+        for row in rows:
+            f.write(",".join(str(c) for c in row) + "\n")
+        return path
+expected:
+  - file: app/jobs/export.py
+    contains: 'f = open(path, "w")'
+    categories: [correctness, performance, maintainability]
+    min_severity: medium
+    required_context: []
