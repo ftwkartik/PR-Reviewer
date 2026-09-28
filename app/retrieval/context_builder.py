@@ -71,20 +71,28 @@ class ContextBuilder:
         store: ChunkStore | None,
         embedder: EmbeddingProvider | None = None,
         weights: Weights = DEFAULT_WEIGHTS,
+        *,
+        tiers: frozenset[Tier] | None = None,
+        rag_sources: frozenset[str] = frozenset({"lexical", "vector", "exact"}),
     ) -> None:
+        """`tiers` and `rag_sources` exist for ablation studies; production uses the defaults."""
         self._store, self._embedder, self._weights = store, embedder, weights
+        self._tiers = tiers if tiers is not None else frozenset(Tier)
+        self._rag_sources = rag_sources
 
     async def build(self, req: ContextRequest) -> ContextBundle:
         refs = _Refs()
         cands: list[RetrievedContext] = []
-        cands += self._tier1(req, refs)
-        cands += await self._tier2(req, refs)
+        on = self._tiers
+        cands += self._tier1(req, refs)  # always computed: it also fills refs for later tiers
+        cands += await self._tier2(req, refs) if Tier.DEPENDENCY in on else []
         if self._store is not None:
             excl = req.changed_paths
-            cands += await self._tier3(refs, excl)
-            cands += await self._tier4(req, refs, excl)
-            cands += await self._tier_rag(req, refs, excl)
-            cands += await self._tier_docs(refs, excl)
+            cands += await self._tier3(refs, excl) if Tier.USAGE in on else []
+            cands += await self._tier4(req, refs, excl) if Tier.VALIDATION in on else []
+            cands += await self._tier_rag(req, refs, excl) if Tier.RAG in on else []
+            cands += await self._tier_docs(refs, excl) if Tier.CONVENTIONS in on else []
+        cands = [c for c in cands if c.tier in on]
         bundle = select_within_budget(cands, req.budget_tokens, DEFAULT_SHARES)
         tiers = {t.label: sum(1 for i in bundle.items if i.tier == t) for t in Tier}
         log.info("context_built", items=len(bundle.items), tokens=bundle.tokens_used,
@@ -141,6 +149,13 @@ class ContextBuilder:
                     for c in chunks:
                         if c.symbol_type == "method" and c.symbol == name:
                             out.append(_item(c, Tier.DEPENDENCY, 6.0, "sibling_method"))
+        # bare calls resolved to definitions elsewhere in the PR's own (head-version) files
+        bare = {c for c in refs.called if "." not in c}
+        for chunks in req.overlay.values():
+            for c in chunks:
+                if c.symbol_type in {"function", "class"} and c.qualified_name in bare:
+                    if c.qualified_name not in refs.symbols:  # the changed symbol itself is Tier 1
+                        out.append(_item(c, Tier.DEPENDENCY, 7.0, "same_pr_definition"))
         imports = [i for i in dict.fromkeys(refs.imports) if i.rsplit(".", 1)[-1] in used_words]
         imports = imports[:24]
         overlay_paths = set(req.overlay)
@@ -225,12 +240,14 @@ class ContextBuilder:
         signatures = " ".join(refs.signatures) or " ".join(sorted(refs.qualified))
         query_text = f"{req.pr_title}\n{signatures}\n{refs.changed_text[:2000]}"
         lexical = await self._store.lexical(query_text, exclude, limit=20)
-        ranked: dict[str, list[CodeChunk]] = {"lexical": lexical}
-        if self._embedder is not None:
+        ranked: dict[str, list[CodeChunk]] = {}
+        if "lexical" in self._rag_sources:
+            ranked["lexical"] = lexical
+        if self._embedder is not None and "vector" in self._rag_sources:
             vec = await self._embedder.embed_query(query_text[:6000])
             ranked["vector"] = await self._store.vector(vec, exclude, limit=20)
         names = sorted(refs.qualified | refs.called)
-        if names:
+        if names and "exact" in self._rag_sources:
             ranked["exact"] = await self._store.by_names(names, exclude, limit=10)
         sctx = ScoringContext(
             referenced_names=frozenset(refs.called | {c.rsplit(".", 1)[-1] for c in refs.called}),
