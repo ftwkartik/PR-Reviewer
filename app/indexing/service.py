@@ -26,6 +26,7 @@ from app.github.client import GitHubClient
 from app.github.tarball import safe_extract
 from app.indexing.chunker import chunk_file
 from app.indexing.ignore import IgnoreRules, should_index
+from app.observability.metrics import EMBED_OPERATIONS, EMBED_TOKENS
 from app.retrieval.embeddings import EmbeddingProvider
 
 log = structlog.get_logger()
@@ -235,6 +236,8 @@ class IndexService:
             cached.update(fresh)
             stats.embeddings_computed += len(missing)
             stats.embed_tokens += result.tokens
+            EMBED_OPERATIONS.inc(len(missing))
+            EMBED_TOKENS.inc(result.tokens)
         stats.embeddings_cached += len(keys) - len(missing)
         pairs = [(c, cached.get(k)) for c, k in zip(chunks, keys, strict=True)]
         stats.new_chunks += await repo_index.insert_chunks(

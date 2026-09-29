@@ -10,6 +10,7 @@ from app.db.models import ReviewFinding as Row
 from app.db.models.base import utcnow
 from app.github.client import GitHubClient
 from app.github.publisher import PublishResult, publish_review
+from app.observability.metrics import PUBLISHED_COMMENTS
 from app.review.summary import CommentData, SummaryData
 
 log = structlog.get_logger()
@@ -88,6 +89,7 @@ async def publish_job(
         "published_comments": len(comments) - len(failed),
     }
     await session.commit()
+    PUBLISHED_COMMENTS.inc(len(comments) - len(failed))
     log.info("review_published", review_github_id=result.review_id, comments=len(comments),
              failed=len(failed), already_posted=len(result.already_posted))  # fmt: skip
     return result

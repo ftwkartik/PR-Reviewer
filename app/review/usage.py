@@ -5,6 +5,7 @@ from typing import Any
 from app.db.models import ReviewJob
 from app.llm.base import LLMUsage
 from app.llm.pricing import estimate_cost_usd
+from app.observability.metrics import EST_COST
 
 MAX_REQUEST_IDS = 50
 
@@ -25,6 +26,9 @@ def record_llm_usage(job: ReviewJob, model: str, usage: LLMUsage, request_ids: l
                  cur["cache_write_tokens"]),
     )  # fmt: skip
     cur["est_cost_usd"] = round(cost, 6) if cost is not None else None
+    delta = estimate_cost_usd(model, usage)
+    if delta is not None:
+        EST_COST.inc(delta)
     ids = list(cur.get("provider_request_ids", [])) + request_ids
     cur["provider_request_ids"] = ids[-MAX_REQUEST_IDS:]
     job.usage = cur

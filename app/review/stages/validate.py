@@ -12,6 +12,7 @@ from app.db.models import ReviewFinding as FindingRow
 from app.domain.review import SEVERITY_RANK, ProcessedFinding, SynthesisResult
 from app.domain.states import ReviewStatus
 from app.llm.base import LLMProvider, LLMRequest
+from app.observability.metrics import FINDINGS
 from app.review.deduplicator import apply_caps, deduplicate
 from app.review.orchestrator import ReviewContext
 from app.review.prompts import build_synthesis_prompt
@@ -72,6 +73,8 @@ class ValidateStage:
         by_status: dict[str, int] = {}
         for p in processed:
             by_status[p.status] = by_status.get(p.status, 0) + 1
+        for p_ in processed:
+            FINDINGS.labels(p_.status).inc()
         log.info("validation_done", pr=pr.number, total=len(processed), **by_status)
         return None
 

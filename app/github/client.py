@@ -11,6 +11,7 @@ import structlog
 
 from app.core.errors import PermanentError, TransientError
 from app.github.auth import InstallationTokenProvider
+from app.observability.metrics import GITHUB_CALLS
 
 log = structlog.get_logger()
 
@@ -53,6 +54,7 @@ class GitHubClient:
                     raise TransientError(f"GitHub network error: {exc!r}") from exc
                 await self._sleep(_backoff(attempt))
                 continue
+            GITHUB_CALLS.labels(method, str(resp.status_code)).inc()
             wait = _retry_delay(resp)
             if wait is not None:
                 if attempt == MAX_ATTEMPTS - 1 or wait > 120:

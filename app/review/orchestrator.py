@@ -28,6 +28,7 @@ from app.domain.pr import PullRequestContext
 from app.domain.retrieval import ContextBundle
 from app.domain.states import TERMINAL, ReviewStatus
 from app.github.client import GitHubClient
+from app.observability.metrics import REVIEW_JOBS, timed_stage
 from app.review.batching import ReviewBatch
 from app.review.triage import TriageResult
 
@@ -118,11 +119,13 @@ class ReviewOrchestrator:
             if current == ReviewStatus.QUEUED or _order(stage.status) > _order(current):
                 await jobs.transition(ctx.session, ctx.job, stage.status)
                 current = stage.status
-            override = await stage.run(ctx)
+            with timed_stage(stage.status.value):
+                override = await stage.run(ctx)
             if override is not None and override != current:
                 await jobs.transition(ctx.session, ctx.job, override)
                 current = override
         await jobs.transition(ctx.session, ctx.job, ReviewStatus.COMPLETED)
+        REVIEW_JOBS.labels("COMPLETED").inc()
         return ReviewStatus.COMPLETED
 
     async def _raise_if_cancelled(self, ctx: ReviewContext) -> None:
@@ -145,6 +148,7 @@ class ReviewOrchestrator:
 
         ctx.job.finished_at = utcnow()
         await ctx.session.commit()
+        REVIEW_JOBS.labels(status.value).inc()
         log.warning("review_finished", status=status.value, error_code=code)
 
 

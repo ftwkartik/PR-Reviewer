@@ -16,6 +16,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.errors import PermanentError
 from app.core.retry import retry_transient
+from app.observability.metrics import LLM_CALLS, LLM_SECONDS, LLM_TOKENS
 
 log = structlog.get_logger()
 
@@ -107,6 +108,8 @@ class StructuredProvider(ABC):
                 operation=f"{self.name}.{request.purpose}",
             )
             usage.add(raw.usage)
+            LLM_TOKENS.labels("input").inc(raw.usage.input_tokens)
+            LLM_TOKENS.labels("output").inc(raw.usage.output_tokens)
             if raw.request_id:
                 ids.append(raw.request_id)
             log.info(
@@ -116,7 +119,11 @@ class StructuredProvider(ABC):
             )  # fmt: skip
             return raw
 
-        raw = await call(turns)
+        try:
+            raw = await call(turns)
+        except Exception:
+            LLM_CALLS.labels(self.name, request.purpose, "error").inc()
+            raise
         parsed, error = _parse(raw, request.schema)
         repaired = False
         if parsed is None:
@@ -132,7 +139,10 @@ class StructuredProvider(ABC):
             if parsed is None:
                 raise PermanentError(f"model output failed validation after repair: {error}",
                                      code="llm_malformed_output")  # fmt: skip
-        return LLMResult(parsed, usage, self.model, ids, time.monotonic() - started, repaired)
+        elapsed = time.monotonic() - started
+        LLM_CALLS.labels(self.name, request.purpose, "repaired" if repaired else "ok").inc()
+        LLM_SECONDS.labels(self.name, request.purpose).observe(elapsed)
+        return LLMResult(parsed, usage, self.model, ids, elapsed, repaired)
 
 
 def _parse[T: BaseModel](raw: RawCompletion, schema: type[T]) -> tuple[T | None, str]:

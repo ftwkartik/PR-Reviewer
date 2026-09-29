@@ -42,8 +42,21 @@ class Settings(BaseSettings):
     max_context_tokens: int = Field(24_000, gt=0)
     max_model_calls: int = Field(12, gt=0)
     max_webhook_body_bytes: int = 5_000_000
+    rate_limit_per_minute: int = 60  # per API key / IP on /api/v1; 0 disables
+    allowed_owners: str = ""  # comma-separated GitHub owners; empty = allow all installed repos
+    daily_budget_usd: float = 0.0  # per-repository LLM spend cap over 24h; 0 disables
+    findings_retention_days: int = 90
+    metrics_token: SecretStr = SecretStr(
+        ""
+    )  # if set, /metrics requires 'Authorization: Bearer <token>'
+    worker_metrics_port: int = 9102  # 0 disables the worker's Prometheus endpoint
     static_analyzers: str = "ruff,bandit,semgrep"  # comma list; '' disables
     analyzer_timeout_s: float = 30.0
+
+
+def is_owner_allowed(settings: Settings, owner: str) -> bool:
+    allowed = {o.strip().lower() for o in settings.allowed_owners.split(",") if o.strip()}
+    return not allowed or owner.lower() in allowed
 
 
 @lru_cache
