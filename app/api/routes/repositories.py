@@ -4,8 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import require_api_key
+from app.api.ratelimit import rate_limit
 from app.api.routes.reviews import get_gh_factory
 from app.core.errors import PermanentError, TransientError
 from app.db.models import RepositorySnapshot
@@ -15,7 +17,9 @@ from app.db.session import get_session
 from app.github.factory import GitHubClientFactory
 
 router = APIRouter(
-    prefix="/api/v1/repositories", tags=["repositories"], dependencies=[Depends(require_api_key)]
+    prefix="/api/v1/repositories",
+    tags=["repositories"],
+    dependencies=[Depends(require_api_key), Depends(rate_limit)],
 )
 
 
@@ -60,7 +64,7 @@ async def trigger_index(
         ) from exc
     finally:
         await close()
-    queued = enqueue_index(str(record.id), sha)
+    queued = await run_in_threadpool(enqueue_index, str(record.id), sha)
     return {"status": "queued" if queued else "deferred", "commit_sha": sha}
 
 

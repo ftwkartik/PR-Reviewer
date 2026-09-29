@@ -1,0 +1,34 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: {POSTGRES_USER: review, POSTGRES_PASSWORD: review, POSTGRES_DB: review_test}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U review" --health-interval 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://review:review@localhost:5432/review_test
+      DATABASE_URL: postgresql+asyncpg://review:review@localhost:5432/review_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy app evals
+      - run: uv run pytest --cov=app --cov-report=term-missing -q
+      - name: Retrieval evaluation (deterministic, no API keys)
+        run: uv run python -m evals.run_eval --retrieval-only --out /tmp/retrieval.md
+      - name: Migrations apply cleanly
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head

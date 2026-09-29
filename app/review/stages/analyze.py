@@ -7,6 +7,7 @@ import structlog
 
 from app.core.config import Settings
 from app.core.errors import PermanentError, TransientError
+from app.db.repositories import review_jobs as jobs
 from app.domain.review import ReviewFinding, ReviewResult
 from app.domain.states import ReviewStatus
 from app.llm.base import LLMProvider, LLMRequest, LLMResult
@@ -34,6 +35,14 @@ class AnalyzeStage:
 
     async def run(self, ctx: ReviewContext) -> ReviewStatus | None:
         pr = ctx.require_pr()
+        cap = self._settings.daily_budget_usd
+        if cap > 0:
+            spent = await jobs.spend_last_24h(ctx.session, ctx.job.repository_id, ctx.job.id)
+            if spent >= cap:
+                raise PermanentError(
+                    f"repository reached its daily LLM budget (${spent:.2f} of ${cap:.2f})",
+                    code="budget_exceeded",
+                )
         sem = asyncio.Semaphore(CONCURRENCY)
 
         async def one(batch: ReviewBatch) -> BatchOutcome:

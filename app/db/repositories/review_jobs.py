@@ -2,7 +2,7 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import Float, cast, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -149,6 +149,21 @@ async def stale_queued_jobs(session: AsyncSession, older_than: timedelta) -> lis
         )
     )
     return list(rows.scalars())
+
+
+async def spend_last_24h(
+    session: AsyncSession, repository_id: uuid.UUID, exclude: uuid.UUID
+) -> float:
+    """Estimated LLM spend (USD) on a repository over the last 24 hours, excluding one job."""
+    cost = cast(ReviewJob.usage["est_cost_usd"].astext, Float)
+    total = await session.scalar(
+        select(func.coalesce(func.sum(cost), 0.0)).where(
+            ReviewJob.repository_id == repository_id,
+            ReviewJob.id != exclude,
+            ReviewJob.created_at > utcnow() - timedelta(hours=24),
+        )
+    )
+    return float(total or 0.0)
 
 
 async def find_live_job(

@@ -17,6 +17,7 @@ from app.domain.pr import ChangedFile, DiffHunk
 from app.domain.retrieval import ContextBundle
 from app.domain.review import ProcessedFinding, ReviewFinding
 from app.review.sanitize import sanitize_inline, sanitize_markdown
+from app.review.secrets import redact
 
 MIN_EVIDENCE_CHARS = 6
 FUZZY_LINE_MATCH = 0.9
@@ -47,16 +48,16 @@ class Corpus:
     def build(cls, files: list[ChangedFile], bundle: ContextBundle | None) -> "Corpus":
         texts: list[str] = []
         for f in files:
-            texts += [ln.text for h in f.hunks for ln in h.lines]
+            texts += [redact(ln.text) for h in f.hunks for ln in h.lines]
         if bundle:
             for item in bundle.items:
-                texts += item.chunk.content.splitlines()
+                texts += redact(item.chunk.content).splitlines()
         collapsed = [c for c in (collapse(t) for t in texts) if c]
         return cls(set(collapsed), " ".join(collapsed))
 
 
 def evidence_exists(quote: str, corpus: Corpus) -> bool:
-    qlines = [collapse(strip_render_prefix(ln)) for ln in quote.splitlines() if ln.strip()]
+    qlines = [collapse(strip_render_prefix(ln)) for ln in redact(quote).splitlines() if ln.strip()]
     qlines = [q for q in qlines if q]
     if not qlines or len(" ".join(qlines)) < MIN_EVIDENCE_CHARS:
         return False

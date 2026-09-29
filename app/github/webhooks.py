@@ -44,6 +44,17 @@ class PullRequestEvent(_Loose):
     installation: GHInstallation | None = None
 
 
+class InstallationRepo(_Loose):
+    id: int
+
+
+class InstallationEvent(_Loose):
+    action: str
+    installation: GHInstallation
+    repositories: list[InstallationRepo] = []  # `installation` events
+    repositories_removed: list[InstallationRepo] = []  # `installation_repositories` events
+
+
 Decision = Literal["review", "ignore"]
 
 

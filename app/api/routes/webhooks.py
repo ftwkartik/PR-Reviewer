@@ -6,12 +6,16 @@ import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import SettingsDep
+from app.core.config import is_owner_allowed
 from app.core.security import verify_github_signature
+from app.db.repositories import index as repo_index
 from app.db.repositories import review_jobs as jobs
 from app.db.session import get_session
-from app.github.webhooks import PullRequestEvent, should_review
+from app.github.webhooks import InstallationEvent, PullRequestEvent, should_review
+from app.observability.metrics import WEBHOOKS
 from app.workers.queue import enqueue_review
 
 router = APIRouter(tags=["webhooks"])
@@ -53,6 +57,8 @@ async def github_webhook(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "missing event or delivery header")
     if x_github_event == "ping":
         return {"status": "pong"}
+    if x_github_event in {"installation", "installation_repositories"}:
+        return await _handle_uninstall(session, body, x_github_event, x_github_delivery)
     if x_github_event != "pull_request":
         return {"status": "ignored", "reason": f"unsupported_event:{x_github_event}"}
 
@@ -67,13 +73,19 @@ async def github_webhook(
     )  # fmt: skip
     if not is_new:
         await session.rollback()
+        WEBHOOKS.labels(x_github_event, "duplicate").inc()
         return {"status": "duplicate"}
 
     decision, reason = should_review(event)
     if decision == "ignore":
         await session.commit()
+        WEBHOOKS.labels(x_github_event, "ignored").inc()
         return {"status": "ignored", "reason": reason}
 
+    if not is_owner_allowed(settings, event.repository.owner.login):
+        await session.commit()
+        WEBHOOKS.labels(x_github_event, "ignored").inc()
+        return {"status": "ignored", "reason": "owner_not_allowed"}
     repo = await jobs.upsert_repository(
         session,
         github_repo_id=event.repository.id,
@@ -90,8 +102,42 @@ async def github_webhook(
     )  # fmt: skip
     await session.commit()
     if job is None:
+        WEBHOOKS.labels(x_github_event, "duplicate").inc()
         return {"status": "duplicate", "reason": "review_for_head_exists"}
 
-    queued = enqueue(job.id)  # never raises; failure leaves the job for the sweeper
+    WEBHOOKS.labels(x_github_event, "queued").inc()
+    # Celery's publish is blocking network I/O: keep it off the event loop.
+    queued = await run_in_threadpool(
+        enqueue, job.id
+    )  # never raises; failure leaves it to the sweeper
     log.info("review_queued", review_id=str(job.id), delivery_id=x_github_delivery, enqueued=queued)
     return {"status": "queued", "review_id": str(job.id), "enqueued": queued}
+
+
+async def _handle_uninstall(
+    session: AsyncSession, body: bytes, event: str, delivery_id: str
+) -> dict[str, Any]:
+    """Privacy: on uninstall (or repo removal) purge everything derived from the repository."""
+    try:
+        ev = InstallationEvent.model_validate_json(body)
+    except ValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "malformed payload") from exc
+    is_new = await jobs.record_delivery(
+        session, delivery_id=delivery_id, event=event, action=ev.action,
+        payload_hash=hashlib.sha256(body).hexdigest(),
+    )  # fmt: skip
+    if not is_new:
+        await session.rollback()
+        return {"status": "duplicate"}
+    repos: list[Any] = []
+    if event == "installation" and ev.action == "deleted":
+        repos = await repo_index.repositories_for_installation(session, ev.installation.id)
+    elif event == "installation_repositories" and ev.action == "removed":
+        ids = [r.id for r in ev.repositories_removed]
+        repos = await repo_index.repositories_for_installation(session, ev.installation.id, ids)
+    for repo in repos:
+        await repo_index.delete_repository_data(session, repo)
+    await session.commit()
+    WEBHOOKS.labels(event, "purged" if repos else "ignored").inc()
+    log.info("installation_purged", repositories=len(repos), delivery_id=delivery_id)
+    return {"status": "purged" if repos else "ignored", "repositories": len(repos)}

@@ -249,6 +249,15 @@ async def gc_snapshots(session: AsyncSession, repo_id: uuid.UUID, keep: int = 3)
     return cast(CursorResult[Any], res).rowcount or 0
 
 
+async def repositories_for_installation(
+    session: AsyncSession, installation_id: int, github_repo_ids: list[int] | None = None
+) -> list[Repository]:
+    q = select(Repository).where(Repository.installation_id == installation_id)
+    if github_repo_ids is not None:
+        q = q.where(Repository.github_repo_id.in_(github_repo_ids))
+    return list((await session.execute(q)).scalars())
+
+
 async def delete_repository_data(session: AsyncSession, repo: Repository) -> None:
     """Privacy: remove every stored artefact derived from the repository's source."""
     job_ids = select(ReviewJob.id).where(ReviewJob.repository_id == repo.id)

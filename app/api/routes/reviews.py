@@ -7,8 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import SettingsDep, require_api_key
+from app.api.ratelimit import rate_limit
+from app.core.config import is_owner_allowed
 from app.core.errors import PermanentError, StaleHeadError, TransientError
 from app.db.models import ReviewFinding as FindingRow
 from app.db.repositories import review_jobs as jobs
@@ -18,7 +21,9 @@ from app.review.publishing import publish_job
 from app.workers.queue import enqueue_review
 
 router = APIRouter(
-    prefix="/api/v1/reviews", tags=["reviews"], dependencies=[Depends(require_api_key)]
+    prefix="/api/v1/reviews",
+    tags=["reviews"],
+    dependencies=[Depends(require_api_key), Depends(rate_limit)],
 )
 
 
@@ -55,12 +60,15 @@ def get_enqueue_fn() -> Callable[..., bool]:
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
 async def create_review(
     body: CreateReviewRequest,
+    settings: SettingsDep,
     session: Annotated[AsyncSession, Depends(get_session)],
     gh_factory: Annotated[GitHubClientFactory, Depends(get_gh_factory)],
     enqueue: Annotated[Callable[..., bool], Depends(get_enqueue_fn)],
 ) -> dict[str, Any]:
     """Queue a review for an existing PR without needing a webhook."""
     owner, name = body.repository.split("/", 1)
+    if not is_owner_allowed(settings, owner):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "repository owner is not allowed")
     known = await jobs.find_repository(session, owner, name)
     installation_id = body.installation_id or (known.installation_id if known else None)
     if installation_id is None:
@@ -98,7 +106,7 @@ async def create_review(
             raise HTTPException(status.HTTP_409_CONFLICT, "retry the request")
         return {"review_id": str(existing.id), "status": existing.status.lower(), "existing": True}
     await session.commit()
-    enqueue(job.id)
+    await run_in_threadpool(enqueue, job.id)
     return {"review_id": str(job.id), "status": "queued"}
 
 

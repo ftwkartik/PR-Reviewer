@@ -153,9 +153,9 @@ class ContextBuilder:
         bare = {c for c in refs.called if "." not in c}
         for chunks in req.overlay.values():
             for c in chunks:
-                if c.symbol_type in {"function", "class"} and c.qualified_name in bare:
-                    if c.qualified_name not in refs.symbols:  # the changed symbol itself is Tier 1
-                        out.append(_item(c, Tier.DEPENDENCY, 7.0, "same_pr_definition"))
+                is_def = c.symbol_type in {"function", "class"} and c.qualified_name in bare
+                if is_def and c.qualified_name not in refs.symbols:  # the changed symbol is Tier 1
+                    out.append(_item(c, Tier.DEPENDENCY, 7.0, "same_pr_definition"))
         imports = [i for i in dict.fromkeys(refs.imports) if i.rsplit(".", 1)[-1] in used_words]
         imports = imports[:24]
         overlay_paths = set(req.overlay)
