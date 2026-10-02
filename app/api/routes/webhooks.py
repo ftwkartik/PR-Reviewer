@@ -98,7 +98,7 @@ async def github_webhook(
     job = await jobs.create_job(
         session, repository=repo, pull_number=event.number,
         head_sha=event.pull_request.head.sha, base_sha=event.pull_request.base.sha,
-        trigger="webhook", delivery_id=x_github_delivery,
+        trigger="webhook", delivery_id=x_github_delivery, dry_run=settings.webhook_dry_run,
     )  # fmt: skip
     await session.commit()
     if job is None:

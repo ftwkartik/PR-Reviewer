@@ -37,12 +37,26 @@ def strip_render_prefix(line: str) -> str:
     return _RENDER_PREFIX.sub("", line)
 
 
+_CODE_TOKEN = re.compile(r"[A-Za-z0-9_]+")
+MIN_TOKEN_QUOTE = 3  # token-level matching needs at least this many tokens...
+MIN_TOKEN_CHARS = 12  # ...and this many characters, so trivial quotes cannot match by chance
+
+
+_STRING_PREFIXES = frozenset({"f", "r", "b", "u", "fr", "rf", "br", "rb"})
+
+
+def code_tokens(s: str) -> list[str]:
+    """Identifiers/numbers, minus bare string prefixes (f"..." etc.), applied to both sides."""
+    return [t for t in _CODE_TOKEN.findall(s) if t.lower() not in _STRING_PREFIXES]
+
+
 @dataclass
 class Corpus:
     """Everything the model was actually shown, normalised for verbatim-quote checks."""
 
     lines: set[str] = field(default_factory=set)
     blob: str = ""
+    tokens: str = ""  # identifiers/numbers of the corpus joined by single spaces
 
     @classmethod
     def build(cls, files: list[ChangedFile], bundle: ContextBundle | None) -> "Corpus":
@@ -53,7 +67,8 @@ class Corpus:
             for item in bundle.items:
                 texts += redact(item.chunk.content).splitlines()
         collapsed = [c for c in (collapse(t) for t in texts) if c]
-        return cls(set(collapsed), " ".join(collapsed))
+        tokens = " ".join(code_tokens(" ".join(collapsed)))
+        return cls(set(collapsed), " ".join(collapsed), " " + tokens)
 
 
 def evidence_exists(quote: str, corpus: Corpus) -> bool:
@@ -64,10 +79,35 @@ def evidence_exists(quote: str, corpus: Corpus) -> bool:
     joined = " ".join(qlines)
     if joined in corpus.blob:
         return True
-    if len(qlines) == 1:
+    if len(qlines) > 1:
+        hits = sum(1 for q in qlines if q in corpus.lines or q in corpus.blob)
+        if hits / len(qlines) >= FUZZY_LINE_MATCH:
+            return True
+    return _token_match(joined, corpus)
+
+
+TOKEN_COVERAGE = 0.8  # share of the quote's tokens that must appear consecutively in the corpus
+
+
+def _token_match(quote: str, corpus: Corpus) -> bool:
+    """Tolerant tier: most of the quote's code tokens appear consecutively, in order, in what the
+    model was shown. Absorbs quote/escape/punctuation drift, a truncated last token, and a few
+    stray leading/trailing tokens (typical of small local models) while rejecting invented code.
+    """
+    toks = code_tokens(quote)
+    if len(toks) < MIN_TOKEN_QUOTE or sum(len(t) for t in toks) < MIN_TOKEN_CHARS:
         return False
-    hits = sum(1 for q in qlines if q in corpus.lines or q in corpus.blob)
-    return hits / len(qlines) >= FUZZY_LINE_MATCH
+    max_trim = int(len(toks) * (1 - TOKEN_COVERAGE))
+    for lead in range(max_trim + 1):
+        for trail in range(max_trim - lead + 1):
+            core = toks[lead : len(toks) - trail]
+            if len(core) < MIN_TOKEN_QUOTE or sum(len(t) for t in core) < MIN_TOKEN_CHARS:
+                continue
+            head = " ".join(re.escape(t) for t in core[:-1])
+            pattern = " " + (head + " " if head else "") + re.escape(core[-1])  # last may be cut
+            if re.search(pattern, corpus.tokens):
+                return True
+    return False
 
 
 def normalize_path(path: str, files: dict[str, ChangedFile]) -> str | None:

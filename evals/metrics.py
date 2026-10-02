@@ -25,6 +25,20 @@ def matches(pf: ProcessedFinding, exp: ExpectedFinding) -> bool:
     return f.line_start <= exp.line_end + TOLERANCE and f.line_end >= exp.line_start - TOLERANCE
 
 
+def matches_location_only(pf: ProcessedFinding, exp: ExpectedFinding) -> bool:
+    """Lenient secondary match: right file and lines, ignoring category and severity labels.
+
+    Models often locate a defect correctly but label it differently (e.g. `api` vs `concurrency`).
+    This does NOT check that the stated reason is right, so it is an upper bound on recall.
+    """
+    f = pf.finding
+    return (
+        f.path == exp.file
+        and f.line_start <= exp.line_end + TOLERANCE
+        and f.line_end >= exp.line_start - TOLERANCE
+    )
+
+
 def exact_location(pf: ProcessedFinding, exp: ExpectedFinding) -> bool:
     return pf.finding.line_start <= exp.line_end and pf.finding.line_end >= exp.line_start
 
@@ -39,6 +53,8 @@ class CaseScore:
     fp: int = 0
     fn: int = 0
     exact_location: int = 0
+    tp_loose: int = 0  # located correctly, category/severity ignored
+    fp_loose: int = 0
     raw_findings: int = 0
     duplicates: int = 0
     rejected: Counter[str] = field(default_factory=Counter)
@@ -81,6 +97,13 @@ def score_case(
             s.tp += 1
             s.exact_location += int(exact_location(hit, exp))
     s.fp = len(free)
+    loose_free = list(accepted)
+    for exp in case.expected:
+        hit = next((p for p in loose_free if matches_location_only(p, exp)), None)
+        if hit is not None:
+            loose_free.remove(hit)
+            s.tp_loose += 1
+    s.fp_loose = len(loose_free)
     text = (
         summary + " " + " ".join(p.finding.title + " " + p.finding.explanation for p in accepted)
     ).lower()
@@ -110,6 +133,12 @@ def aggregate(scores: list[CaseScore]) -> dict[str, float]:
         "precision": precision,
         "recall": recall,
         "f1": _ratio(2 * precision * recall, precision + recall),
+        "precision_location_only": _ratio(
+            sum(s.tp_loose for s in scores), sum(s.tp_loose + s.fp_loose for s in scores)
+        ),
+        "recall_location_only": _ratio(
+            sum(s.tp_loose for s in scores), sum(s.expected for s in scores)
+        ),
         "false_positives_per_pr": _ratio(fp, len(scores)),
         "false_positives_on_clean_prs": float(sum(s.accepted for s in clean)),
         "clean_prs_with_any_comment": _ratio(sum(1 for s in clean if s.accepted), len(clean)),

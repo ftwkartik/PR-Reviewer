@@ -33,8 +33,10 @@ def reasoning_table(agg: dict[str, float]) -> str:
         return f"{agg[k]:.0%}"
 
     rows = [
-        ("Precision", pct("precision")),
-        ("Recall", pct("recall")),
+        ("Precision (location + category match)", pct("precision")),
+        ("Recall (location + category match)", pct("recall")),
+        ("Precision (location only, upper bound)", pct("precision_location_only")),
+        ("Recall (location only, upper bound)", pct("recall_location_only")),
         ("F1", f"{agg['f1']:.2f}"),
         ("False positives per PR", f"{agg['false_positives_per_pr']:.2f}"),
         ("Accepted comments on clean/decoy PRs", f"{agg['false_positives_on_clean_prs']:.0f}"),

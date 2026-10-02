@@ -67,14 +67,18 @@ class ReviewFinding(BaseModel):
 
 
 class ReviewResult(BaseModel):
+    """Field ORDER matters: structured output is generated key by key, so `findings` must come
+    first. If `summary`/`overall_risk` come first, the model commits to "no issues" before it has
+    examined anything and then (especially small models) returns an empty findings list."""
+
     model_config = ConfigDict(extra="forbid")
 
-    summary: str = Field(description="2-4 sentences on what the change does and its main risk")
-    overall_risk: Risk
     findings: list[ReviewFinding] = Field(max_length=MAX_FINDINGS_PER_CALL)
     positive_observations: list[str] = Field(
         default_factory=list, max_length=5, description="Brief notes on things done well"
     )
+    overall_risk: Risk
+    summary: str = Field(description="2-4 sentences on what the change does and its main risk")
 
 
 class SynthesisVerdict(BaseModel):
@@ -86,13 +90,14 @@ class SynthesisVerdict(BaseModel):
 
 
 class SynthesisResult(BaseModel):
-    """PR-level pass: may only keep/drop existing findings and add summary-level notes."""
+    """PR-level pass: may only keep/drop existing findings and add summary-level notes.
+    Verdicts come first for the same reason as in ReviewResult."""
 
     model_config = ConfigDict(extra="forbid")
 
-    summary: str
     verdicts: list[SynthesisVerdict]
     cross_file_observations: list[str] = Field(default_factory=list, max_length=5)
+    summary: str
 
 
 FindingStatus = Literal[

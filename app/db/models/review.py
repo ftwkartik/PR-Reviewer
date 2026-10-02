@@ -105,7 +105,7 @@ class ReviewFinding(Base):
     confidence: Mapped[float] = mapped_column(Float)
     fingerprint: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(20), default="accepted")
-    reject_reason: Mapped[str | None] = mapped_column(String(64))
+    reject_reason: Mapped[str | None] = mapped_column(Text)
     github_comment_id: Mapped[int | None] = mapped_column(BigInteger)
     pass_name: Mapped[str] = mapped_column(String(32), default="general")
     context_refs: Mapped[list[Any]] = mapped_column(JSONB, default=list)

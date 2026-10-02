@@ -193,3 +193,37 @@ def test_caps_keep_highest_priority(cf) -> None:  # type: ignore[no-untyped-def]
     apply_caps(fs, per_file=2, total=10)
     kept = {f.finding.severity for f in fs if f.status == "accepted"}
     assert kept == {"critical", "high"} and sum(f.status == "capped" for f in fs) == 2
+
+
+def test_token_tier_accepts_punctuation_drift_but_not_invented_code(cf) -> None:  # type: ignore[no-untyped-def]
+    """Small models drop quotes/escapes in quotes; the evidence must still be real code."""
+    corpus = Corpus.build([cf], None)
+    assert evidence_exists("session = (await repo.get(sid))", corpus)  # parens/spacing drift
+    assert evidence_exists("session   await repo get sid", corpus)  # punctuation removed entirely
+    assert evidence_exists("session = await repo.get(si", corpus)  # truncated final token
+    assert not evidence_exists("repo await session = get(sid)", corpus)  # same tokens, wrong order
+    assert not evidence_exists("user.is_admin = True and skip_checks()", corpus)  # invented
+    assert not evidence_exists("return session", Corpus(set(), "x", " a b c"))  # not in the corpus
+    assert not evidence_exists("a b", corpus)  # too short for the tolerant tier
+
+
+def test_token_tier_matches_multiline_string_concatenation_quote() -> None:
+    from tests.helpers import changed_file
+
+    new = 'rows = text(\n    "SELECT count(*) AS n FROM jobs "\n    f"WHERE r.name = \'{repo_name}\'"\n)\n'
+    corpus = Corpus.build([changed_file("a.py", "x = 1\n", new)], None)
+    assert evidence_exists(
+        "text(SELECT count(*) AS n FROM jobs WHERE r.name = '{repo_name}')", corpus
+    )
+
+
+def test_token_tier_tolerates_a_few_stray_tokens_but_not_mostly_invented_quotes(cf) -> None:  # type: ignore[no-untyped-def]
+    corpus = Corpus.build([cf], None)
+    real = "session = await repo.get(sid)"
+    assert evidence_exists("result = " + real, corpus) or evidence_exists(
+        "x " + real, corpus
+    )  # stray lead
+    assert not evidence_exists(
+        "os system user_input await repo get sid chmod 777 root", corpus
+    )  # mostly invented
+    assert not evidence_exists("session = await DANGEROUS.get_all_secrets(sid, verbose)", corpus)

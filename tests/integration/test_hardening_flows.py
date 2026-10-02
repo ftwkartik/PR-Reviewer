@@ -177,3 +177,11 @@ async def test_retention_purge_deletes_only_expired_findings(sessionmaker, monke
     assert await _purge(90) == 1
     async with sessionmaker() as s:
         assert [f.title for f in (await s.execute(select(ReviewFinding))).scalars()] == ["recent"]
+
+
+async def test_webhook_dry_run_setting_prevents_publishing(client, sessionmaker) -> None:  # type: ignore[no-untyped-def]
+    c, _, cfg = client
+    cfg["webhook_dry_run"] = True
+    assert (await post(c, "pull_request", pr_payload(), "dr1")).json()["status"] == "queued"
+    async with sessionmaker() as s:
+        assert (await s.execute(select(ReviewJob))).scalar_one().dry_run is True

@@ -48,7 +48,7 @@ class ValidateStage:
         summary = " ".join(ctx.data.get("batch_summaries", []))[:1500]
         cross_file: list[str] = []
         candidates = [p for p in processed if p.status == "accepted"]
-        if candidates:
+        if candidates and self._settings.review_synthesis:
             try:
                 synthesis = await self._synthesize(ctx, candidates)
                 summary = synthesis.summary or summary

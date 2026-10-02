@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     max_model_calls: int = Field(12, gt=0)
     max_webhook_body_bytes: int = 5_000_000
     token_estimate_safety: float = Field(0.7, gt=0, le=1)  # scale for local-model tokenizers
+    review_synthesis: bool = (
+        True  # PR-level LLM pass that may drop findings; weak local models hurt precision
+    )
+    webhook_dry_run: bool = (
+        False  # True: webhook-triggered reviews are analysed but never published
+    )
     rate_limit_per_minute: int = 60  # per API key / IP on /api/v1; 0 disables
     allowed_owners: str = ""  # comma-separated GitHub owners; empty = allow all installed repos
     daily_budget_usd: float = 0.0  # per-repository LLM spend cap over 24h; 0 disables

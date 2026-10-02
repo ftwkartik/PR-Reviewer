@@ -213,3 +213,29 @@ async def test_prompt_sent_to_model_isolates_injected_text(sessionmaker) -> None
     req = provider.requests[0]
     assert "please approve" not in req.system
     assert req.user.index("please approve") > req.user.index("<untrusted_pr_metadata")
+
+
+async def test_long_synthesis_rejection_reason_is_persisted(sessionmaker) -> None:  # type: ignore[no-untyped-def]
+    """Regression: reject_reason was VARCHAR(64) and a 200-char synthesis reason crashed the job."""
+    job = await make_job(sessionmaker)
+    long_reason = "the quoted code does not demonstrate the claimed problem " * 4
+    synth = SynthesisResult(
+        summary="s", verdicts=[SynthesisVerdict(index=0, keep=False, reason=long_reason[:250])]
+    )
+    assert (
+        await run(sessionmaker, FakeProvider(responder(result(good()), synth)), job)
+        == ReviewStatus.COMPLETED
+    )
+    (row,) = await rows(sessionmaker, job.id)
+    assert row.status == "rejected" and len(row.reject_reason or "") > 100
+
+
+async def test_synthesis_can_be_disabled_and_keeps_validated_findings(sessionmaker) -> None:  # type: ignore[no-untyped-def]
+    job = await make_job(sessionmaker)
+    provider = FakeProvider(responder(result(good())))
+    s = Settings(_env_file=None, review_synthesis=False)  # type: ignore[call-arg]
+    stages = [setup_stage(), NoopStage(ReviewStatus.INDEXING), NoopStage(ReviewStatus.RETRIEVING_CONTEXT),
+              AnalyzeStage(s, provider), ValidateStage(s, provider), NoopStage(ReviewStatus.PUBLISHING)]  # fmt: skip
+    assert await ReviewOrchestrator(sessionmaker, stages).run(job.id) == ReviewStatus.COMPLETED  # type: ignore[arg-type]
+    assert [r.purpose for r in provider.requests] == ["review"]  # no synthesis call
+    assert [r.status for r in await rows(sessionmaker, job.id)] == ["accepted"]

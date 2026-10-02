@@ -117,3 +117,21 @@ def test_aggregate_math() -> None:
     assert agg["precision"] == pytest.approx(1 / 3) and agg["recall"] == pytest.approx(0.5)
     assert agg["false_positives_per_pr"] == 1.0 and agg["clean_prs_with_any_comment"] == 1.0
     assert agg["duplicate_rate"] == pytest.approx(0.2) and agg["line_location_accuracy"] == 1.0
+
+
+def test_location_only_metric_forgives_category_but_not_wrong_file_or_line() -> None:
+    c = case("seeded", 1)
+    e = c.expected[0]
+    wrong_cat = pf(
+        path=e.file,
+        line=e.line_start,
+        cat="maintainability" if "maintainability" not in e.categories else "testing",
+    )
+    s = score_case(c, [wrong_cat])
+    assert (s.tp, s.fp, s.fn) == (0, 1, 1) and (s.tp_loose, s.fp_loose) == (1, 0)
+    far = pf(path=e.file, line=e.line_start + 40, cat=e.categories[0])
+    assert score_case(c, [far]).tp_loose == 0
+    other_file = pf(path="zzz.py", line=e.line_start, cat=e.categories[0])
+    assert score_case(c, [other_file]).tp_loose == 0
+    agg = aggregate([score_case(c, [wrong_cat])])
+    assert agg["recall_location_only"] == 1.0 and agg["recall"] == 0.0

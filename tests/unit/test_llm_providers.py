@@ -57,7 +57,7 @@ async def test_malformed_output_gets_one_repair_with_error_fed_back() -> None:
     assert (
         repair_turn.role == "user"
         and "invalid" in repair_turn.content
-        and "overall_risk" in repair_turn.content
+        and "findings" in repair_turn.content  # first required field in the schema
     )
 
 
@@ -224,3 +224,15 @@ def test_schema_roundtrip_is_strict() -> None:
             '{"summary":"s","overall_risk":"none","findings":[],"bogus":1}'
         )
     _ = (Extra, Turn)
+
+
+def test_schema_puts_findings_before_summary_and_risk() -> None:
+    """Regression: with summary/risk first, small models answer 'no issues' and emit no findings."""
+    from anthropic import transform_schema
+
+    from app.domain.review import SynthesisResult
+
+    keys = list(transform_schema(ReviewResult)["properties"])
+    assert keys.index("findings") < keys.index("overall_risk") < keys.index("summary")
+    skeys = list(transform_schema(SynthesisResult)["properties"])
+    assert skeys.index("verdicts") < skeys.index("summary")
