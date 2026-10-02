@@ -43,6 +43,11 @@ def parse_semgrep(raw: bytes) -> list[StaticFinding]:
         data = json.loads(raw or b"{}")
     except json.JSONDecodeError:
         return []
+    fatal = [e for e in data.get("errors", []) if e.get("level") == "error"]
+    if fatal and not data.get("results"):
+        # e.g. an invalid ruleset: must surface in logs, not look like "no findings".
+        msgs = "; ".join(str(e.get("message", "?")).splitlines()[0][:120] for e in fatal[:2])
+        raise RuntimeError(f"semgrep failed: {msgs}")
     out: list[StaticFinding] = []
     for it in data.get("results", []):
         extra = it.get("extra", {})

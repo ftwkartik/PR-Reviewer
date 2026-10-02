@@ -67,7 +67,7 @@ class AnalyzeStage:
                             prompt.user,
                             ReviewResult,
                             "review",
-                            self._settings.llm_max_output_tokens,
+                            self._settings.llm_output_cap,
                         )  # fmt: skip
                     )
                     return BatchOutcome(batch, res, None)

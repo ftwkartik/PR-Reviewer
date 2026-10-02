@@ -40,7 +40,9 @@ def test_model_call_limit_reserves_synthesis_call_and_reports_skips() -> None:
     assert skipped and all(reason == "model_call_limit" for _, reason in skipped)
 
 
-def test_context_budget_never_below_floor() -> None:
+def test_context_budget_floor_scales_with_small_windows() -> None:
     batches, _ = make_batches([file("a.py")], 24_000, 12)
-    assert context_budget(batches[0], 100) == 2000
     assert context_budget(batches[0], 24_000) > 10_000
+    assert context_budget(batches[0], 8_000) >= 2000  # normal windows keep the 2000-token floor
+    # a tiny window must not be overrun by a flat floor (small local models): floor = window // 4
+    assert context_budget(batches[0], 100) == 25

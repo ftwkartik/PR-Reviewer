@@ -47,7 +47,7 @@ class RetrieveStage:
         }
 
         batches, skipped = make_batches(
-            triage.selected, self._settings.max_context_tokens, self._settings.max_model_calls
+            triage.selected, self._settings.context_limit, self._settings.max_model_calls
         )
         for path, reason in skipped:
             triage.skipped.append((path, reason))
@@ -68,7 +68,7 @@ class RetrieveStage:
                     overlay=overlay,
                     changed_paths=changed_paths,
                     pr_title=pr.title,
-                    budget_tokens=context_budget(batch, self._settings.max_context_tokens),
+                    budget_tokens=context_budget(batch, self._settings.context_limit),
                 )  # fmt: skip
             )
         ctx.batches = batches

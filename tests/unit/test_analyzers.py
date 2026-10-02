@@ -171,3 +171,33 @@ def test_env_really_contains_the_secret_in_this_process(monkeypatch: pytest.Monk
     assert (
         os.environ["ANTHROPIC_API_KEY"] == "sk-x"
     )  # sanity: the isolation test above is meaningful
+
+
+def test_semgrep_ruleset_is_valid_yaml_with_expected_rules() -> None:
+    import yaml
+
+    from app.analyzers.semgrep import RULES
+
+    rules = yaml.safe_load(RULES.read_text())["rules"]
+    assert len(rules) >= 5 and all(
+        {"id", "pattern", "message", "languages"} <= set(r) for r in rules
+    )
+
+
+def test_semgrep_errors_are_raised_not_swallowed() -> None:
+    bad = json.dumps(
+        {"errors": [{"level": "error", "message": "Invalid YAML file x\n\tdetails"}], "results": []}
+    )
+    with pytest.raises(RuntimeError, match="semgrep failed"):
+        parse_semgrep(bad.encode())
+
+
+@pytest.mark.skipif(
+    __import__("shutil").which("semgrep") is None, reason="semgrep binary not installed"
+)
+async def test_real_semgrep_finds_rule_hits_offline() -> None:
+    src = 'import subprocess, yaml\n\n\ndef run(cmd):\n    subprocess.call(cmd, shell=True)\n    return yaml.load(open("c.yml"))\n'
+    found = await run_analyzers(
+        [SemgrepAnalyzer()], {"app/x.py": src}, {"app/x.py": frozenset(range(1, 8))}, 60
+    )
+    assert {f.rule_id for f in found} >= {"python-subprocess-shell-true", "python-yaml-unsafe-load"}

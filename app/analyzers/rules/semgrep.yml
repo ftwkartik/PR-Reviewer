@@ -3,25 +3,25 @@ rules:
   - id: python-subprocess-shell-true
     languages: [python]
     severity: ERROR
-    message: subprocess call with shell=True; command injection risk if any part is user-controlled
-    pattern: subprocess.$FUNC(..., shell=True, ...)
+    message: 'subprocess call with shell=True; command injection risk if any part is user-controlled'
+    pattern: 'subprocess.$FUNC(..., shell=True, ...)'
   - id: python-yaml-unsafe-load
     languages: [python]
     severity: ERROR
-    message: yaml.load without a safe loader can construct arbitrary objects
-    pattern: yaml.load($X)
+    message: 'yaml.load without a safe loader can construct arbitrary objects'
+    pattern: 'yaml.load($X)'
   - id: python-requests-verify-false
     languages: [python]
     severity: WARNING
-    message: TLS certificate verification disabled
-    pattern: requests.$FUNC(..., verify=False, ...)
+    message: 'TLS certificate verification disabled'
+    pattern: 'requests.$FUNC(..., verify=False, ...)'
   - id: python-jwt-verify-disabled
     languages: [python]
     severity: ERROR
-    message: JWT signature verification disabled
-    pattern: jwt.decode(..., options={"verify_signature": False}, ...)
+    message: 'JWT signature verification disabled'
+    pattern: 'jwt.decode(..., options={"verify_signature": False}, ...)'
   - id: python-sql-fstring-execute
     languages: [python]
     severity: ERROR
-    message: SQL built with an f-string and passed to execute(); use bound parameters
-    pattern: $CUR.execute(f"...")
+    message: 'SQL built with an f-string and passed to execute(); use bound parameters'
+    pattern: '$CUR.execute(f"...")'

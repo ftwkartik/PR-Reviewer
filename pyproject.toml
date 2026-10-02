@@ -26,6 +26,7 @@ dependencies = [
   "tree-sitter-python>=0.23",
   "ruff>=0.16.9",
   "bandit>=1.9.4",
+  "semgrep>=1.79.0",
 ]
 
 [dependency-groups]

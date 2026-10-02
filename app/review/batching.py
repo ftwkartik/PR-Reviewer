@@ -74,4 +74,7 @@ def make_batches(
 
 
 def context_budget(batch: ReviewBatch, max_context_tokens: int) -> int:
-    return max(MIN_CONTEXT_TOKENS, max_context_tokens - batch.diff_tokens - PROMPT_OVERHEAD_TOKENS)
+    floor = min(
+        MIN_CONTEXT_TOKENS, max_context_tokens // 4
+    )  # small local windows must not overflow
+    return max(floor, max_context_tokens - batch.diff_tokens - PROMPT_OVERHEAD_TOKENS)
