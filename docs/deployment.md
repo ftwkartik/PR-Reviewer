@@ -21,7 +21,8 @@ GitHub ──HTTPS──> Caddy/Traefik (TLS) ──> api (x2)  ──> Postgres
 | Variable | Notes |
 |---|---|
 | `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` | From the GitHub App. Private key via secret store; `\n` escapes are accepted in env vars |
-| `LLM_PROVIDER`, `LLM_MODEL`, provider API key | Model is never hard-coded |
+| `LLM_PROVIDER` (`anthropic`/`openai`/`ollama`), `LLM_MODEL`, provider API key | Model is never hard-coded. For local inference see `docs/local-ollama.md` (`OLLAMA_BASE_URL`, `OLLAMA_NUM_CTX`) |
+| `REVIEW_SYNTHESIS`, `WEBHOOK_DRY_RUN` | Disable the LLM synthesis pass for weak models; force webhook reviews to never publish while testing |
 | `EMBEDDING_PROVIDER` (`voyage`/`openai`/`hash`), key | `hash` is for dev/tests only (lexical, not semantic) |
 | `API_KEY` | Required for `/api/v1`. Use a long random value |
 | `ALLOWED_OWNERS` | Restrict which GitHub owners may trigger reviews (prevents LLM-budget abuse) |

@@ -10,6 +10,8 @@
 | Job `STALE` | PR updated during review | Expected; the newer head has its own job |
 | Job `PARTIAL`-path (`scope.degraded`) | Some batches failed or limits hit | `GET /api/v1/reviews/{id}`; scope lists skipped files and reasons |
 | GitHub `403` with rate-limit headers | Secondary rate limit | Client waits/retries; lower worker concurrency |
+| Worker → Ollama times out | UFW default-deny drops the compose bridge; see `docs/local-ollama.md` (allow `prbr0` → 11434) |
+| `llm_context_overflow` | Prompt cannot fit `OLLAMA_NUM_CTX`; lower `MAX_CONTEXT_TOKENS` or raise the window |
 | Retrieval seems poor | Wrong/old embedding model | `GET /api/v1/repositories/{o}/{r}/index/status`; re-index; check `embedding_model` |
 
 ## Operations

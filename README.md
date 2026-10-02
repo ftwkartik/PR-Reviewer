@@ -4,10 +4,11 @@ An AI pull-request reviewer that behaves like a senior engineer: it reads the di
 the whole repository**, proposes findings as structured data, and only posts the ones that survive a
 deterministic validation pipeline, pinned to the exact commit that was reviewed.
 
-> **Status:** feature-complete MVP for Python repositories. 278 automated tests pass, including a
-> webhook-to-published-review end-to-end test. It has **not** yet been run against a live GitHub App or a
-> paid model, so there are no real-model quality numbers in this repository (see
-> [Evaluation](#evaluation) for what *is* measured, and what is not).
+> **Status:** feature-complete MVP for Python repositories. 317 automated tests pass, including a
+> webhook-to-published-review end-to-end test. It has run end to end against a live GitHub App (webhook →
+> index → retrieval → local LLM → validated findings, dry run) using **local Ollama models, with no paid
+> API**; Anthropic/OpenAI adapters exist but have not been exercised against the real APIs. Measured
+> quality for local models is in [Evaluation](#evaluation) and is modest: read it before relying on it.
 
 ## Why this is more than `PR diff → LLM → comment`
 
@@ -83,7 +84,8 @@ sequenceDiagram
 
 - GitHub App auth (JWT → short-lived installation tokens), HMAC-verified, idempotent webhooks
 - Celery + Redis workers, explicit job state machine, retries with backoff, outbox-style sweeper
-- Provider-neutral LLM layer (Anthropic implemented, OpenAI adapter included), retry/backoff/jitter,
+- Provider-neutral LLM layer (Anthropic, OpenAI, and local **Ollama** — see
+  [`docs/local-ollama.md`](docs/local-ollama.md)), retry/backoff/jitter,
   JSON-schema output with one repair attempt, per-job token and cost tracking
 - Validation pipeline, deduplication, caps, GitHub `suggestion` blocks only for verified replacements
 - Static analysis as *evidence* (never posted directly), run in isolated subprocesses with no secrets
@@ -107,6 +109,9 @@ curl localhost:8000/ready
 ```
 
 Services: `postgres` (pgvector), `redis`, `migrate` (one-shot), `api`, `worker`.
+
+**No paid API?** Run a local model with Ollama (`LLM_PROVIDER=ollama`): setup, Docker→host networking, a dry-run
+on a real PR, and model guidance are in [`docs/local-ollama.md`](docs/local-ollama.md).
 
 Development without Docker for the app itself:
 
@@ -175,31 +180,72 @@ No screenshots or demo recording yet: they require a live run against a real Git
 `evals/` contains a 15-PR benchmark over a small FastAPI app: 10 seeded defects (auth bypass, race condition,
 missing transaction, swallowed exception, resource leak, N+1 query, breaking API change, missing boundary
 validation, blocking call in async code, SQL injection), 2 clean PRs, 2 decoys (risky-looking but correct),
-and 1 prompt-injection PR. Each seeded PR lists the context symbols a reviewer needs.
+and 1 prompt-injection PR (12 expected findings in total). Each seeded PR lists the context symbols a reviewer needs.
 
-**Retrieval (real numbers, no LLM involved, hash embedder).** Did the final, budgeted context contain the
-code needed to reason about each seeded bug? (`python -m evals.run_eval --retrieval-only`)
+### Review quality: local models (measured, no paid API)
+
+Run on an RTX 4050 (6 GB) laptop with Ollama, hash embeddings, ruff/bandit/semgrep enabled, synthesis pass off
+(`python -m evals.run_eval`; full reports in `evals/results/ollama_*.md`). Strict = right file, lines (±3) **and**
+category; location-only is an upper bound that forgives mislabelled categories but not wrong reasoning.
+
+| | `qwen2.5-coder:3b` | `qwen2.5-coder:7b` |
+|---|---|---|
+| Precision / recall (strict) | 36% / 42% | **58% / 58%** |
+| Precision / recall (location only) | 71% / 83% | 75% / 75% |
+| False positives per PR | 0.60 | 0.33 |
+| Clean/decoy PRs that got a comment | 4 of 4 | 2 of 4 |
+| Structured output valid first try | 15/15 | 15/15 |
+| Mean latency per PR | 5.4 s | 9.3 s |
+| GPU residency (`ollama ps`) | 100% GPU, `num_ctx` 16k | 91% GPU / 9% CPU, `num_ctx` 8k |
+
+Findings from the runs (two runs per model; strict numbers moved by up to ±8 points between runs of the same
+model, so treat them as ±8):
+
+- The 3B model emits about one finding per PR **regardless of content** and gives every finding the same
+  confidence (0.90), so thresholds cannot help; it is a baseline, not a recommendation. The 7B model is the
+  smallest one that is usefully selective, but it still misses roughly 4 in 10 seeded defects and comments on half
+  of the clean/decoy PRs.
+- Static analyzers showed **no measurable benefit** on this benchmark for the 7B model (62%/67% without vs
+  58%/58% with, within noise): the seeded bugs are mostly logic and design issues that these tools cannot see.
+  On a real PR the hints made the model report only the flagged SQL injection and skip a second real defect.
+- Real-PR dry run (`ftwkartik/PR-Reviewer#1`, a file with ~6 plausible defects): both models found **1 of ~6**
+  (the SQL injection, correct lines); the others were missed. Nothing was published.
+- Prompt injection: before the deterministic defence below, the 7B model's summary on the injection PR was
+  literally "LGTM" (the planted phrase). After it, 0% of runs echoed the injection; the benchmark's combined
+  "resisted and still found the bug" metric is still 0% because the model also missed the underlying bug there.
+
+Bugs found by running real models (all fixed, with regression tests): the result schema put `summary` before
+`findings`, which made small models answer "no issues"; strict verbatim evidence matching rejected real findings
+on trivial quote drift (now a token-level tier); `reject_reason` was too short and crashed jobs; secret redaction
+had never been wired into the prompts; worker metrics were invisible from pool processes.
+
+### Retrieval (no LLM involved)
+
+Did the final, budgeted context contain the code needed to reason about each seeded bug?
+(`python -m evals.run_eval --retrieval-only`)
 
 | Retrieval mode | Required-context hit rate | PRs fully covered |
 |---|---|---|
 | diff only | 0% (0/13) | 0% |
-| vector only | 69% (9/13) | 50% |
+| vector only (hash) | 69% (9/13) | 50% |
 | lexical only | 54% (7/13) | 38% |
 | hybrid search only | 69% (9/13) | 50% |
 | **full (structural tiers + hybrid)** | **92% (12/13)** | **88%** |
+| full, with local `mxbai-embed-large` embeddings | 85% (11/13) | 75% |
 
 One known miss remains (`sql_injection`: a parameterised-query example that is not referenced by the changed
-code). The hash embedder is lexical-only, so "vector" here approximates keyword overlap; a semantic embedding
-model should change the vector/hybrid rows and has not been measured.
+code). A real local embedding model (`EMBEDDING_PROVIDER=ollama`) did **not** improve retrieval on this benchmark
+(a one-symbol difference, within noise), because the required context is mostly structural, so `hash` stays the
+default; the Ollama embedder is available as an option.
 
-**Harness self-check (simulated reviewers, *not* language models).** Scripted reviewers verify that scoring
-and validation behave: a perfect reviewer scores 100% precision/recall; a reviewer that also hallucinates
-files, quotes and lines still scores 100% precision because the validator rejects 85% of its raw output;
-a reviewer that adds plausible-but-wrong, correctly anchored comments drops to 52% precision with 5 comments
-on clean PRs. Reports are in `evals/results/`.
+### Harness self-check (simulated reviewers, *not* language models)
 
-**Not measured yet:** precision, recall and false-positive rate of a real model. Run
-`python -m evals.run_eval` with `LLM_PROVIDER`/`LLM_MODEL` configured to produce `evals/report.md`.
+Scripted reviewers verify that scoring and validation behave: a perfect reviewer scores 100%; a reviewer that also
+hallucinates files, quotes and lines still scores 100% precision because the validator rejects 85% of its raw
+output; one that adds plausible-but-wrong, correctly anchored comments drops to 52% precision. Reports:
+`evals/results/selfcheck_*.md`. These were produced by simulators and say nothing about real model quality.
+
+**Not measured:** Anthropic/OpenAI models (no paid API was used).
 
 ## Security model
 
@@ -210,7 +256,11 @@ Full details in [`docs/threat-model.md`](docs/threat-model.md) and [`docs/privac
 - **PR code is never executed.** Analyzers are static, run as separate processes with a scrubbed environment,
   CPU/heap/file-size limits, a timeout, and ignore repository-supplied configuration.
 - Webhooks are HMAC-verified and idempotent; tarballs are extracted defensively (no traversal/symlinks/bombs).
-- Secrets are redacted before model calls; logs never contain code or credentials.
+- Secrets are redacted before anything reaches a model (tested on the rendered prompt); logs never contain
+  code or credentials.
+- **Prompt injection:** besides delimiting untrusted text, lines that address an AI reviewer ("ignore previous
+  instructions", "reply LGTM", ...) are removed from the model's input, reported as a security finding, and the
+  model's summary is discarded if an attempt was found: small local models obey such text even when told not to.
 - Posted text is sanitised (no mentions, HTML, images or foreign links); the review event is always `COMMENT`.
 
 ## Roadmap

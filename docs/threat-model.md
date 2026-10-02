@@ -2,7 +2,7 @@
 
 | Threat | Mitigation |
 |---|---|
-| Prompt injection (PR text, code comments, docs, analyzer output) | Untrusted content in nonce-delimited blocks; forced-schema output; model has no write/network tools; application-side validation; sanitized templated comments |
+| Prompt injection (PR text, code comments, docs, analyzer output) | Untrusted content in nonce-delimited blocks; **instruction-like lines are removed from the model input and reported as a finding (small models obey injected text); summary discarded if an attempt was detected**; schema-constrained output; model has no write/network tools; application-side validation; sanitized templated comments |
 | Malicious tarballs / huge files | Safe extraction (no `..`, absolute paths, symlinks); size/file-count caps; parse timeouts; binary sniffing |
 | Untrusted PR code | **Never executed on the host.** Static analysis only. Future execution: ephemeral container, no network, read-only FS, CPU/mem/time limits, no secrets, no Docker socket |
 | Webhook spoofing / replay | HMAC-SHA256 constant-time check; body-size cap; delivery-ID idempotency; ignore unknown installations |
