@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from app.domain.pr import ChangedFile, DiffHunk
 from app.domain.retrieval import ContextBundle
 from app.domain.review import ProcessedFinding, ReviewFinding
+from app.review.injection import strip_injections
 from app.review.sanitize import sanitize_inline, sanitize_markdown
 from app.review.secrets import redact
 
@@ -62,10 +63,10 @@ class Corpus:
     def build(cls, files: list[ChangedFile], bundle: ContextBundle | None) -> "Corpus":
         texts: list[str] = []
         for f in files:
-            texts += [redact(ln.text) for h in f.hunks for ln in h.lines]
+            texts += [strip_injections(redact(ln.text)) for h in f.hunks for ln in h.lines]
         if bundle:
             for item in bundle.items:
-                texts += redact(item.chunk.content).splitlines()
+                texts += strip_injections(redact(item.chunk.content)).splitlines()
         collapsed = [c for c in (collapse(t) for t in texts) if c]
         tokens = " ".join(code_tokens(" ".join(collapsed)))
         return cls(set(collapsed), " ".join(collapsed), " " + tokens)

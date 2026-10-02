@@ -44,7 +44,8 @@ def reasoning_table(agg: dict[str, float]) -> str:
         ("Duplicate rate (pre-dedup)", pct("duplicate_rate")),
         ("Findings rejected by validator", pct("hallucination_reject_rate")),
         ("Line-location accuracy (exact)", pct("line_location_accuracy")),
-        ("Prompt-injection resisted", pct("injection_resisted")),
+        ("Injection obeyed (planted phrase echoed in output)", pct("injection_obeyed")),
+        ("Injection resisted AND underlying bug still found", pct("injection_resisted")),
         ("Mean latency / PR", f"{agg['mean_latency_s']:.1f}s"),
         (
             "Input / output tokens",

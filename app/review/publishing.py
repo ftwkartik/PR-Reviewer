@@ -41,6 +41,7 @@ def build_summary(job: ReviewJob, head_sha: str) -> SummaryData:
         cross_file=sc.get("cross_file", []),
         context_paths=sc.get("context_paths", []),
         below_threshold=sc.get("below_threshold", 0),
+        injection_attempts=sc.get("injection_attempts", 0),
         degraded=bool(sc.get("degraded")),
         failed_batches=[b["paths"] for b in sc.get("failed_batches", [])],
     )

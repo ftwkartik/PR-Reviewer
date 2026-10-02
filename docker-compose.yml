@@ -1,7 +1,7 @@
 x-app: &app
   build: .
   env_file: [.env]
-  environment:
+  environment: &app-env
     DATABASE_URL: postgresql+asyncpg://review:review@postgres:5432/review
     REDIS_URL: redis://redis:6379/0
     # Containers reach the host's Ollama through the pinned bridge's gateway (see `networks`).
@@ -49,6 +49,9 @@ services:
       migrate: {condition: service_completed_successfully}
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
+    environment:
+      <<: *app-env
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prom_multiproc  # aggregate metrics from pool children
     tmpfs: ["/tmp:size=1g"]
     expose: ["9102"]  # worker Prometheus endpoint
 

@@ -109,3 +109,58 @@ async def test_exhausted_retries_raise_transient(monkeypatch: pytest.MonkeyPatch
 def test_missing_api_key_is_config_error() -> None:
     with pytest.raises(PermanentError):
         VoyageEmbedder("", "m", 4)
+
+
+# ---- Ollama embedder ---------------------------------------------------------------------------
+
+OLLAMA_EMBED = "http://ollama.test:11434/api/embed"
+
+
+def _vec(n: int, dim: int = 1024) -> dict:  # type: ignore[type-arg]
+    return {"embeddings": [[0.1] * dim for _ in range(n)], "prompt_eval_count": 7 * n}
+
+
+async def test_ollama_embedder_batches_and_prefixes_queries() -> None:
+    from app.retrieval.embeddings import OllamaEmbedder
+
+    with respx.mock() as m:
+        route = m.post(OLLAMA_EMBED).mock(
+            side_effect=lambda req: httpx.Response(
+                200, json=_vec(len(json.loads(req.content)["input"]))
+            )
+        )
+        e = OllamaEmbedder("mxbai-embed-large", "http://ollama.test:11434")
+        e.batch_size = 2
+        res = await e.embed_documents(["a", "b", "c"])
+        q = await e.embed_query("where is verify_token")
+    assert route.call_count == 3 and len(res.vectors) == 3 and res.tokens == 21
+    last = json.loads(route.calls[2].request.content)
+    assert last["model"] == "mxbai-embed-large" and last["input"][0].startswith(
+        "Represent this sentence"
+    )
+    assert len(q) == 1024
+
+
+async def test_ollama_embedder_rejects_wrong_dimension_and_missing_model() -> None:
+    from app.retrieval.embeddings import OllamaEmbedder
+
+    e = OllamaEmbedder("nomic-embed-text", "http://ollama.test:11434")
+    with respx.mock() as m:
+        m.post(OLLAMA_EMBED).respond(200, json=_vec(1, dim=768))  # DB column is fixed at 1024
+        with pytest.raises(PermanentError) as ei:
+            await e.embed_documents(["x"])
+    assert ei.value.code == "embedding_dim_mismatch"
+    with respx.mock() as m:
+        m.post(OLLAMA_EMBED).respond(404)
+        with pytest.raises(PermanentError) as ei2:
+            await e.embed_documents(["x"])
+    assert ei2.value.code == "embedding_model_missing"
+
+
+def test_factory_builds_ollama_embedder() -> None:
+    from app.core.config import Settings
+    from app.retrieval.embeddings import OllamaEmbedder, make_embedder
+
+    s = Settings(_env_file=None, embedding_provider="ollama", ollama_base_url="http://h:11434")  # type: ignore[call-arg]
+    emb = make_embedder(s)
+    assert isinstance(emb, OllamaEmbedder) and emb.model == "mxbai-embed-large" and emb.dim == 1024

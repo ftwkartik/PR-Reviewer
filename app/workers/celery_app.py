@@ -1,8 +1,14 @@
+import os
+
 from celery import Celery
 from celery.signals import worker_ready
-from prometheus_client import start_http_server
+from prometheus_client import CollectorRegistry, multiprocess, start_http_server
 
 from app.core.config import get_settings
+
+# Must exist before any metric is created (prometheus_client writes per-process files there).
+if _mp_dir := os.environ.get("PROMETHEUS_MULTIPROC_DIR"):
+    os.makedirs(_mp_dir, exist_ok=True)
 
 _s = get_settings()
 
@@ -38,7 +44,18 @@ celery_app.conf.update(
 
 @worker_ready.connect
 def _start_metrics_server(**_: object) -> None:
-    """Each worker process exposes its own Prometheus endpoint (scrape WORKER_METRICS_PORT)."""
+    """Expose worker metrics on WORKER_METRICS_PORT.
+
+    Tasks run in forked pool children, whose counters live in their own memory. With
+    PROMETHEUS_MULTIPROC_DIR set (docker-compose does) the exporter aggregates every process's
+    metric files; without it only the parent's (task-free) metrics would be visible.
+    """
     port = get_settings().worker_metrics_port
-    if port > 0:
+    if port <= 0:
+        return
+    if os.environ.get("PROMETHEUS_MULTIPROC_DIR"):
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)  # type: ignore[no-untyped-call]
+        start_http_server(port, registry=registry)
+    else:
         start_http_server(port)

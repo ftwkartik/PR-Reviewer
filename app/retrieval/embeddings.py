@@ -144,6 +144,72 @@ class OpenAIEmbedder(_HTTPEmbedder):
         return {"input": inputs, "model": self.model, "dimensions": self.dim}
 
 
+class OllamaEmbedder:
+    """Local embeddings via Ollama `/api/embed` (no API key, nothing leaves the machine).
+
+    The DB column is vector(1024), so the model must produce 1024 dimensions
+    (`mxbai-embed-large` does). Inputs longer than the model's window are truncated by Ollama,
+    which is acceptable for retrieval (the head of a chunk carries its signature and docstring).
+    """
+
+    batch_size = 16
+    # mxbai-embed-large is trained with an instruction prefix for search queries
+    query_prefix = "Represent this sentence for searching relevant passages: "
+
+    def __init__(
+        self, model: str, base_url: str, dim: int = EMBEDDING_DIM,
+        keep_alive: str = "30m", http: httpx.AsyncClient | None = None,
+    ) -> None:  # fmt: skip
+        self.model, self.dim = model, dim
+        self._url = f"{base_url.rstrip('/')}/api/embed"
+        self._keep_alive = keep_alive
+        self._http = http or httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=5.0))
+
+    async def _post(self, inputs: list[str]) -> tuple[list[list[float]], int]:
+        async def call() -> tuple[list[list[float]], int]:
+            body = {"model": self.model, "input": inputs, "truncate": True,
+                    "keep_alive": self._keep_alive}  # fmt: skip
+            try:
+                resp = await self._http.post(self._url, json=body)
+            except httpx.TransportError as exc:
+                raise TransientError(f"ollama embed connection error: {exc!r}") from exc
+            if resp.status_code == 404:
+                raise PermanentError(
+                    f"ollama has no embedding model {self.model!r} "
+                    f"(run `ollama pull {self.model}`)",
+                    code="embedding_model_missing",
+                )
+            if resp.status_code == 429 or resp.status_code >= 500:
+                raise TransientError(f"ollama embed {resp.status_code}")
+            if resp.status_code >= 400:
+                raise PermanentError(f"ollama embed rejected request ({resp.status_code})",
+                                     code="embedding_rejected")  # fmt: skip
+            data = resp.json()
+            vectors = data.get("embeddings") or []
+            if len(vectors) != len(inputs) or any(len(v) != self.dim for v in vectors):
+                raise PermanentError(
+                    f"embedding model returned unexpected shape (need {self.dim} dims; the DB "
+                    "column is fixed, use a 1024-dim model such as mxbai-embed-large)",
+                    code="embedding_dim_mismatch",
+                )
+            return vectors, int(data.get("prompt_eval_count") or 0)
+
+        return await retry_transient(call, operation="embed")
+
+    async def embed_documents(self, texts: list[str]) -> EmbeddingResult:
+        vectors: list[list[float]] = []
+        tokens = 0
+        for i in range(0, len(texts), self.batch_size):
+            vecs, tok = await self._post(texts[i : i + self.batch_size])
+            vectors += vecs
+            tokens += tok
+        return EmbeddingResult(vectors, tokens)
+
+    async def embed_query(self, text: str) -> list[float]:
+        vecs, _ = await self._post([self.query_prefix + text])
+        return vecs[0]
+
+
 def make_embedder(settings: Settings) -> EmbeddingProvider:
     match settings.embedding_provider:
         case "hash":
@@ -152,6 +218,11 @@ def make_embedder(settings: Settings) -> EmbeddingProvider:
             return VoyageEmbedder(
                 settings.voyage_api_key.get_secret_value(),
                 settings.embedding_model or "voyage-code-3", settings.embedding_dim,
+            )  # fmt: skip
+        case "ollama":
+            return OllamaEmbedder(
+                settings.embedding_model or "mxbai-embed-large", settings.ollama_base_url,
+                settings.embedding_dim, settings.ollama_keep_alive,
             )  # fmt: skip
         case "openai":
             return OpenAIEmbedder(

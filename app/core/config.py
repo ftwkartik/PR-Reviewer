@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = Field(16384, ge=2048)
     ollama_keep_alive: str = "30m"
 
-    embedding_provider: Literal["voyage", "openai", "hash"] = "hash"
+    embedding_provider: Literal["voyage", "openai", "ollama", "hash"] = "hash"
     embedding_model: str = ""
     embedding_dim: int = 1024
     voyage_api_key: SecretStr = SecretStr("")

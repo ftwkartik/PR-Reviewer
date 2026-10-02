@@ -82,6 +82,7 @@ class SummaryData:
     cross_file: list[str] = field(default_factory=list)
     context_paths: list[str] = field(default_factory=list)
     below_threshold: int = 0
+    injection_attempts: int = 0
     degraded: bool = False
     failed_batches: list[list[str]] = field(default_factory=list)
 
@@ -132,6 +133,11 @@ def render_summary(d: SummaryData) -> str:
         notices.append(
             "Some files could not be analyzed and were not reviewed: "
             + ", ".join(f"`{p}`" for b in d.failed_batches for p in b[:5])
+        )
+    if d.injection_attempts:
+        notices.append(
+            f"{d.injection_attempts} line(s) of instruction-like text addressed to automated "
+            "reviewers were found and ignored"
         )
     if d.below_threshold:
         notices.append(f"{d.below_threshold} lower-confidence observation(s) were withheld")

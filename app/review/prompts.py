@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from app.domain.pr import ChangedFile, PullRequestContext
 from app.domain.retrieval import ContextBundle, RetrievedContext
 from app.review.diff_render import render_file_diff
+from app.review.injection import strip_injections
+from app.review.secrets import redact
 
 SYSTEM_PROMPT = """\
 You are a senior software engineer reviewing a pull request. Your goal is to surface the few \
@@ -106,8 +108,13 @@ _DELIM_RE = re.compile(r"<(/?)(untrusted_[a-z_]*|context_item|task)\b", re.IGNOR
 
 
 def neutralize(text: str) -> str:
-    """Defang delimiter look-alikes so data can never close or open a prompt block."""
-    return _DELIM_RE.sub(lambda m: f"‹{m.group(1)}{m.group(2)}", text)
+    """Make untrusted repository text safe to embed in a prompt.
+
+    1. redact credentials, 2. remove instruction-like lines aimed at the reviewer,
+    3. defang delimiter look-alikes so data can never close or open a prompt block.
+    """
+    safe = strip_injections(redact(text))
+    return _DELIM_RE.sub(lambda m: f"‹{m.group(1)}{m.group(2)}", safe)
 
 
 def new_nonce() -> str:

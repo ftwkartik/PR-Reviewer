@@ -9,15 +9,16 @@ import structlog
 from app.core.config import Settings
 from app.core.errors import PermanentError, TransientError
 from app.db.models import ReviewFinding as FindingRow
-from app.domain.review import SEVERITY_RANK, ProcessedFinding, SynthesisResult
+from app.domain.review import SEVERITY_RANK, ProcessedFinding, ReviewFinding, SynthesisResult
 from app.domain.states import ReviewStatus
 from app.llm.base import LLMProvider, LLMRequest
 from app.observability.metrics import FINDINGS
 from app.review.deduplicator import apply_caps, deduplicate
+from app.review.injection import count_injections, looks_like_injection
 from app.review.orchestrator import ReviewContext
 from app.review.prompts import build_synthesis_prompt
 from app.review.usage import record_llm_usage
-from app.review.validator import ValidationSettings, validate_findings
+from app.review.validator import ValidationSettings, fingerprint, validate_findings
 
 log = structlog.get_logger()
 
@@ -42,6 +43,9 @@ class ValidateStage:
             raw, files_by_batch, bundles,
             ValidationSettings(self._settings.review_confidence_threshold),
         )  # fmt: skip
+        injected = self._injection_findings(ctx)
+        processed += injected
+        attempts = len(injected) + count_injections(f"{pr.title}\n{pr.body}")
         deduplicate(processed)
         apply_caps(processed)
 
@@ -59,6 +63,13 @@ class ValidateStage:
                 log.warning("synthesis_failed", error_code=exc.code, error=str(exc))
                 ctx.job.scope = {**ctx.job.scope, "synthesis_skipped": exc.code}
 
+        if attempts:
+            # Never trust free text from a model that was exposed to an injection attempt.
+            summary = (
+                "Instruction-like text addressed to automated reviewers was found in this pull "
+                "request and ignored."
+            )
+            cross_file = []
         accepted = [p for p in processed if p.status == "accepted"]
         ctx.data.update(
             processed=processed, accepted=accepted, summary=summary, cross_file=cross_file,
@@ -68,6 +79,7 @@ class ValidateStage:
             **ctx.job.scope, "summary": summary, "cross_file": cross_file,
             "overall_risk": overall_risk(accepted),
             "below_threshold": sum(p.status == "below_threshold" for p in processed),
+            "injection_attempts": attempts,
         }  # fmt: skip
         await self._persist(ctx, processed)
         by_status: dict[str, int] = {}
@@ -77,6 +89,47 @@ class ValidateStage:
             FINDINGS.labels(p_.status).inc()
         log.info("validation_done", pr=pr.number, total=len(processed), **by_status)
         return None
+
+    @staticmethod
+    def _injection_findings(ctx: ReviewContext) -> list[ProcessedFinding]:
+        """Deterministic: added lines that address an AI reviewer are a finding in themselves."""
+        out: list[ProcessedFinding] = []
+        seen: set[tuple[str, int]] = set()
+        for batch in ctx.batches:
+            for f in batch.files:
+                for h in f.hunks:
+                    for ln in h.lines:
+                        key = (f.path, ln.new_line or 0)
+                        if ln.kind != "add" or ln.new_line is None or key in seen:
+                            continue
+                        if not looks_like_injection(ln.text):
+                            continue
+                        seen.add(key)
+                        finding = ReviewFinding(
+                            path=f.path,
+                            line_start=ln.new_line,
+                            line_end=ln.new_line,
+                            severity="medium",
+                            category="security",
+                            title="Embedded instructions aimed at automated reviewers",
+                            explanation=(
+                                "This added line contains text that tries to instruct an AI or "
+                                "automated reviewer (for example to approve the change or to "
+                                "suppress findings). Legitimate code never needs this; it may be "
+                                "an attempt to avoid review of nearby changes."
+                            ),
+                            evidence_quote=ln.text.strip()[:300] or ln.text,
+                            suggested_fix="Remove the line and review the nearby change by hand.",
+                            confidence=0.95,
+                        )
+                        pf = ProcessedFinding(
+                            finding,
+                            batch.index,
+                            pass_name="injection-scan",  # noqa: S106
+                        )
+                        pf.fingerprint = fingerprint(finding, f.path, ln.new_line)
+                        out.append(pf)
+        return out
 
     async def _synthesize(
         self, ctx: ReviewContext, cands: list[ProcessedFinding]
