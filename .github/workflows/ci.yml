@@ -27,8 +27,13 @@ jobs:
       - run: uv run pytest --cov=app --cov-report=term-missing -q
       - name: Retrieval evaluation (deterministic, no API keys)
         run: uv run python -m evals.run_eval --retrieval-only --out /tmp/retrieval.md
-      - name: Migrations apply cleanly
+      - name: Migrations apply cleanly (fresh database)
+        # The test suite above already created tables in review_test, so use an empty database.
+        env:
+          PGPASSWORD: review
+          DATABASE_URL: postgresql+asyncpg://review:review@localhost:5432/migration_check
         run: |
+          psql -h localhost -U review -d postgres -c "CREATE DATABASE migration_check"
           uv run alembic upgrade head
           uv run alembic downgrade base
           uv run alembic upgrade head
